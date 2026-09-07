@@ -14,7 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 
-from analysis.matching import iter_pairs_by_spread
+from analysis.matching import band_names, iter_pairs_by_spread, quality_bands
 from analysis.replay import book_at, observation_times
 from config.settings import QUALITY_STRATA, DIGEST_BUCKETS, TELEGRAM, TelegramConfig
 from domain.models import Pair
@@ -139,9 +139,10 @@ def build(store: Store, host: str, window_sec: int,
 
     # Панель страт считается в ЭТОМ же проходе: book_at — самая дорогая
     # операция отчёта, читать книгу второй раз ради тех же моментов незачем.
-    st_spreads: dict[str, list[Decimal]] = {q.name: [] for q in QUALITY_STRATA}
-    st_ads: dict[str, set[str]] = {q.name: set() for q in QUALITY_STRATA}
-    st_advs: dict[str, set[str]] = {q.name: set() for q in QUALITY_STRATA}
+    _bands = band_names()
+    st_spreads: dict[str, list[Decimal]] = {n: [] for n in _bands}
+    st_ads: dict[str, set[str]] = {n: set() for n in _bands}
+    st_advs: dict[str, set[str]] = {n: set() for n in _bands}
 
     # Схлопываем одну и ту же связку по всему окну.
     seen: dict[tuple[str, str], dict] = {}
@@ -149,23 +150,16 @@ def build(store: Store, host: str, window_sec: int,
     for t in times:
         book = book_at(store, host, t)
 
-        for i, q in enumerate(QUALITY_STRATA):
-            # Страты НЕПЕРЕСЕКАЮЩИЕСЯ, и это принципиально. Пороги вложены
-            # (premium ⊂ good ⊂ basic ⊂ any), поэтому максимум по вложенным
-            # множествам убывает МЕХАНИЧЕСКИ: max по надмножеству всегда
-            # не меньше max по подмножеству. Проверка «сохранился ли порядок»
-            # на вложенных стратах не может провалиться никогда и не несёт
-            # информации. Здесь каждая страта — только те, кто прошёл её порог
-            # и НЕ прошёл следующий.
-            nxt = QUALITY_STRATA[i + 1] if i + 1 < len(QUALITY_STRATA) else None
-            passing = [a for a in book if a.meets(q) and not (nxt and a.meets(nxt))]
-            for a in passing:
-                st_ads[q.name].add(a.ad_id)
-                st_advs[q.name].add(a.advertiser.key)
+        # Полосы взаимоисключающие — определение одно на весь проект,
+        # см. analysis.matching.quality_bands.
+        for name, band in quality_bands(book):
+            for a in band:
+                st_ads[name].add(a.ad_id)
+                st_advs[name].add(a.advertiser.key)
             # лениво: нужна только лучшая пара момента, итератор отсортирован
-            best = next(iter_pairs_by_spread(passing, cfg.amount_kzt), None)
+            best = next(iter_pairs_by_spread(band, cfg.amount_kzt), None)
             if best is not None:
-                st_spreads[q.name].append(best.gross_spread_pct)
+                st_spreads[name].append(best.gross_spread_pct)
 
         for pair in iter_pairs_by_spread(book, cfg.amount_kzt):
             key = (pair.buy_ad.ad_id, pair.sell_ad.ad_id)
@@ -238,16 +232,15 @@ def build(store: Store, host: str, window_sec: int,
 
     strata = tuple(
         StratumRow(
-            name=(q.name if i + 1 == len(QUALITY_STRATA)
-                  else f"{q.name}\\{QUALITY_STRATA[i + 1].name}"),
-            moments=len(st_spreads[q.name]),
-            ads=len(st_ads[q.name]),
-            advertisers=len(st_advs[q.name]),
-            median_spread=_q(st_spreads[q.name], .5),
-            p25=_q(st_spreads[q.name], .25),
-            p75=_q(st_spreads[q.name], .75),
+            name=n,
+            moments=len(st_spreads[n]),
+            ads=len(st_ads[n]),
+            advertisers=len(st_advs[n]),
+            median_spread=_q(st_spreads[n], .5),
+            p25=_q(st_spreads[n], .25),
+            p75=_q(st_spreads[n], .75),
         )
-        for i, q in enumerate(QUALITY_STRATA)
+        for n in _bands
     )
 
     return Digest(host=host, amount_kzt=cfg.amount_kzt, window_from=since,

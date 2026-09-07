@@ -14,7 +14,8 @@ import heapq
 from decimal import Decimal
 from typing import Iterator
 
-from config.settings import MATCHING, MatchingConfig, QualityStratum
+from config.settings import (MATCHING, QUALITY_STRATA, MatchingConfig,
+                             QualityStratum)
 from domain.models import Ad, Pair
 
 
@@ -74,6 +75,37 @@ HARD_REJECTIONS = Pair.HARD_REJECTIONS
 def is_hard_rejected(pair: Pair) -> bool:
     return not pair.executable
 
+
+
+def quality_bands(ads: list[Ad],
+                  strata: tuple[QualityStratum, ...] = QUALITY_STRATA
+                  ) -> list[tuple[str, list[Ad]]]:
+    """Взаимоисключающие полосы качества: (имя, объявления).
+
+    Пороги страт ВЛОЖЕНЫ (premium ⊂ good ⊂ basic ⊂ any). Поэтому сравнивать
+    страты по максимуму спреда нельзя: max по надмножеству никогда не меньше
+    max по подмножеству, и убывание получается тавтологически, при любых
+    данных. Проверено на живых данных: на вложенных стратах порядок не был
+    нарушен ни разу из 32 моментов, на этих полосах — в 22% моментов.
+
+    Полоса k — те, кто прошёл порог k и НЕ прошёл порог k+1. Последняя
+    полоса совпадает с самой строгой стратой.
+
+    Определение живёт здесь в одном экземпляре: на нём стоит протокол
+    подтверждающего прогона, и расхождение между отчётом и дайджестом
+    означало бы разные исследования под одним именем.
+    """
+    out: list[tuple[str, list[Ad]]] = []
+    for i, q in enumerate(strata):
+        nxt = strata[i + 1] if i + 1 < len(strata) else None
+        name = q.name if nxt is None else f"{q.name}\\{nxt.name}"
+        out.append((name, [a for a in ads
+                           if a.meets(q) and not (nxt and a.meets(nxt))]))
+    return out
+
+
+def band_names(strata: tuple[QualityStratum, ...] = QUALITY_STRATA) -> list[str]:
+    return [n for n, _ in quality_bands([], strata)]
 
 def iter_pairs_by_spread(ads: list[Ad], amount_kzt: Decimal,
                          stratum: QualityStratum | None = None,

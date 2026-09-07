@@ -17,9 +17,9 @@ from collections import Counter
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from analysis.matching import best_pair, find_pairs
+from analysis.matching import best_pair, find_pairs, quality_bands
 from analysis.replay import book_at, observation_times
-from config.settings import (ANALYSIS_AMOUNTS_KZT, COLLECTOR, QUALITY_STRATA,
+from config.settings import (ANALYSIS_AMOUNTS_KZT, COLLECTOR,
                              SPREAD_BUCKETS_PCT)
 from storage.db import Store
 
@@ -107,34 +107,58 @@ def question_2_spread_by_stratum(store: Store) -> None:
 
     # Книга читается ОДИН раз на момент. Раньше book_at() вызывался внутри
     # двойного цикла — 12 одинаковых SQL-запросов на каждый момент.
+    # Полосы ВЗАИМОИСКЛЮЧАЮЩИЕ. На вложенных стратах эта таблица была
+    # тавтологией: max по надмножеству не меньше max по подмножеству,
+    # поэтому убывание сверху вниз получалось при любых данных.
     spreads_by: dict[tuple, list[float]] = {}
+    ads_by: dict[tuple, set] = {}
+    advs_by: dict[tuple, set] = {}
     for t in times:
         book = book_at(store, GLOBAL, t)
+        bands = quality_bands(book)
         for amount in ANALYSIS_AMOUNTS_KZT:
-            for st in QUALITY_STRATA:
-                bp = best_pair(book, amount, stratum=st)
+            for name, band in bands:
+                for a in band:
+                    ads_by.setdefault((amount, name), set()).add(a.ad_id)
+                    advs_by.setdefault((amount, name), set()).add(a.advertiser.key)
+                bp = best_pair(band, amount)
                 if bp:
-                    spreads_by.setdefault((amount, st.name), []).append(
+                    spreads_by.setdefault((amount, name), []).append(
                         float(bp.gross_spread_pct))
 
-    print(f"  {'сумма':>8} {'страта':<9} {'набл':>5} {'есть пара':>10} "
-          f"{'медиана':>9} {'P25':>8} {'P75':>8} {'макс':>8}")
-    print("  " + "-" * 68)
+    print(f"  {'сумма':>8} {'полоса':<14} {'набл':>5} {'есть пара':>10} "
+          f"{'медиана':>9} {'P25':>8} {'P75':>8} {'макс':>8} {'ads':>6} {'лиц':>5}")
+    print("  " + "-" * 90)
+    violations = 0
     for amount in ANALYSIS_AMOUNTS_KZT:
-        for st in QUALITY_STRATA:
-            spreads = spreads_by.get((amount, st.name), [])
+        meds: list[float] = []
+        for name, _ in quality_bands([]):
+            spreads = spreads_by.get((amount, name), [])
+            n_ads = len(ads_by.get((amount, name), ()))
+            n_adv = len(advs_by.get((amount, name), ()))
             avail = 100 * len(spreads) / len(times)
             if not spreads:
-                print(f"  {int(amount):>8} {st.name:<9} {len(times):>5} "
-                      f"{avail:>9.0f}% {'—':>9}")
+                print(f"  {int(amount):>8} {name:<14} {len(times):>5} "
+                      f"{avail:>9.0f}% {'—':>9} {'':>8} {'':>8} {'':>8} "
+                      f"{n_ads:>6} {n_adv:>5}")
                 continue
-            print(f"  {int(amount):>8} {st.name:<9} {len(times):>5} "
-                  f"{avail:>9.0f}% {statistics.median(spreads):>8.2f}% "
+            med = statistics.median(spreads)
+            meds.append(med)
+            thin = " thin" if n_adv < 30 else ""
+            print(f"  {int(amount):>8} {name:<14} {len(times):>5} "
+                  f"{avail:>9.0f}% {med:>8.2f}% "
                   f"{q(spreads,0.25):>7.2f}% {q(spreads,0.75):>7.2f}% "
-                  f"{max(spreads):>7.2f}%")
-    print("\n  Читать так: если медиана в страте 'premium' не ниже, чем в 'any',")
-    print("  то спред НЕ является премией за качество контрагента — значит он")
-    print("  премия за что-то другое (банковский/AML/регуляторный риск).")
+                  f"{max(spreads):>7.2f}% {n_ads:>6} {n_adv:>5}{thin}")
+        if len(meds) > 1 and not all(meds[i] >= meds[i + 1]
+                                     for i in range(len(meds) - 1)):
+            violations += 1
+    print(f"\n  номиналов с нарушенным порядком полос: {violations} "
+          f"из {len(ANALYSIS_AMOUNTS_KZT)}")
+    print("\n  Читать так: полосы взаимоисключающие, поэтому убывание медианы")
+    print("  сверху вниз — проверяемое утверждение, а не свойство конструкции.")
+    print("  Нарушение порядка — содержательный результат, а не сбой.")
+    print("  'лиц' — уникальные контрагенты; при значении ниже 30 строка")
+    print("  помечена thin и асимптотический вывод по ней не применяется.")
 
 
 def question_3_persistence(store: Store) -> None:
@@ -144,30 +168,31 @@ def question_3_persistence(store: Store) -> None:
         print("  слишком мало наблюдений")
         return
     amount = Decimal("300000")
-    by_stratum: dict[str, tuple[list, list]] = {
-        st.name: ([], []) for st in QUALITY_STRATA}
+    names = [n for n, _ in quality_bands([])]
+    by_band: dict[str, tuple[list, list]] = {n: ([], []) for n in names}
     for t in times:                     # книга — один раз на момент
         book = book_at(store, GLOBAL, t)
-        for st in QUALITY_STRATA:
-            bp = best_pair(book, amount, stratum=st)
+        for name, band in quality_bands(book):
+            bp = best_pair(band, amount)
             if bp:
-                by_stratum[st.name][0].append(bp.advertiser_pair_key)
-                by_stratum[st.name][1].append(float(bp.gross_spread_pct))
+                by_band[name][0].append(bp.advertiser_pair_key)
+                by_band[name][1].append(float(bp.gross_spread_pct))
 
-    for st in QUALITY_STRATA:
-        pair_keys, spreads = by_stratum[st.name]
+    for name in names:
+        pair_keys, spreads = by_band[name]
         if not pair_keys:
-            print(f"  {st.name:<9} пар не было")
+            print(f"  {name:<14} пар не было")
             continue
         c = Counter(pair_keys)
         top_key, top_n = c.most_common(1)[0]
         share = 100 * top_n / len(pair_keys)
         uniq = len(c)
         std = statistics.pstdev(spreads) if len(spreads) > 1 else 0.0
-        print(f"  {st.name:<9} наблюдений с парой={len(pair_keys):>4}  "
-              f"различных пар рекламодателей={uniq:>3}  "
-              f"доля самой частой={share:>5.1f}%  σ(спред)={std:.3f}пп")
-        print(f"  {'':9} самая частая пара: {top_key[:60]}")
+        thin = "  [thin: <30 диад]" if uniq < 30 else ""
+        print(f"  {name:<14} наблюдений с парой={len(pair_keys):>4}  "
+              f"различных диад={uniq:>3}  "
+              f"доля самой частой={share:>5.1f}%  σ(спред)={std:.3f}пп{thin}")
+        print(f"  {'':14} самая частая пара: {top_key[:60]}")
     print("\n  Читать так: мало различных пар + высокая доля самой частой +")
     print("  σ близкая к нулю  =>  это не рынок, это две статичные витрины")
     print("  с фиксированной наценкой. Транзиентность — признак edge,")

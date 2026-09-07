@@ -23,9 +23,9 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 
-from analysis.matching import best_pair, find_pairs
+from analysis.matching import band_names, best_pair, quality_bands, find_pairs
 from analysis.replay import book_at, observation_times
-from config.settings import (ANALYSIS_AMOUNTS_KZT, COLLECTOR, QUALITY_STRATA,
+from config.settings import (ANALYSIS_AMOUNTS_KZT, COLLECTOR,
                              SPREAD_BUCKETS_PCT, TELEGRAM)
 from storage.db import Store
 
@@ -166,34 +166,51 @@ def _spread_table(store: Store, w, times: list[float]) -> dict:
     w(f"Моментов наблюдения: **{len(times)}** "
       f"({_ts(times[0])} → {_ts(times[-1])})\n\n")
 
+    # Полосы ВЗАИМОИСКЛЮЧАЮЩИЕ: на вложенных стратах эта таблица была
+    # тавтологией (max по надмножеству не меньше max по подмножеству).
     data: dict = {}
+    ads_by: dict = {}
+    advs_by: dict = {}
     for t in times:
         book = book_at(store, GLOBAL, t)
+        bands = quality_bands(book)
         for amount in ANALYSIS_AMOUNTS_KZT:
-            for st in QUALITY_STRATA:
-                bp = best_pair(book, amount, stratum=st)
+            for name, band in bands:
+                for a in band:
+                    ads_by.setdefault((str(amount), name), set()).add(a.ad_id)
+                    advs_by.setdefault((str(amount), name), set()).add(
+                        a.advertiser.key)
+                bp = best_pair(band, amount)
                 if bp:
-                    data.setdefault((str(amount), st.name), []).append(
+                    data.setdefault((str(amount), name), []).append(
                         float(bp.gross_spread_pct))
 
-    w("| сумма KZT | страта | есть пара | медиана | P25 | P75 | макс |\n")
-    w("|---|---|---|---|---|---|---|\n")
+    w("| сумма KZT | полоса | есть пара | медиана | P25 | P75 | макс | ads | лиц |\n")
+    w("|---|---|---|---|---|---|---|---|---|\n")
     for amount in ANALYSIS_AMOUNTS_KZT:
-        for st in QUALITY_STRATA:
-            sp = data.get((str(amount), st.name), [])
+        for name in band_names():
+            sp = data.get((str(amount), name), [])
+            n_ads = len(ads_by.get((str(amount), name), ()))
+            n_adv = len(advs_by.get((str(amount), name), ()))
+            mark = " ⚠thin" if 0 < n_adv < 30 else ""
             avail = 100 * len(sp) / len(times)
             if not sp:
-                w(f"| {int(amount):,} | {st.name} | {avail:.0f}% | — | — | — | — |\n"
-                  .replace(",", " "))
+                w(f"| {int(amount):,} | `{name}` | {avail:.0f}% | — | — | — | — "
+                  f"| {n_ads} | {n_adv}{mark} |\n".replace(",", " "))
                 continue
-            w(f"| {int(amount):,} | {st.name} | {avail:.0f}% "
+            w(f"| {int(amount):,} | `{name}` | {avail:.0f}% "
               f"| {statistics.median(sp):.2f}% | {_q(sp,0.25):.2f}% "
-              f"| {_q(sp,0.75):.2f}% | {max(sp):.2f}% |\n".replace(",", " "))
+              f"| {_q(sp,0.75):.2f}% | {max(sp):.2f}% "
+              f"| {n_ads} | {n_adv}{mark} |\n".replace(",", " "))
 
-    w("\n**Как читать.** Если медиана в страте `premium` не ниже, чем в `any`,\n"
-      "спред НЕ объясняется качеством контрагента — значит это премия за\n"
-      "что-то другое (банковский/AML/регуляторный риск). Если спред падает\n"
-      "с ростом качества — часть его была премией за риск контрагента.\n")
+    w("\n**Как читать.** Полосы взаимоисключающие, поэтому убывание медианы\n"
+      "сверху вниз — проверяемое утверждение, а не свойство конструкции.\n"
+      "На ВЛОЖЕННЫХ стратах эта таблица убывала бы при любых данных, потому\n"
+      "что максимум по надмножеству не может быть меньше максимума по\n"
+      "подмножеству. Нарушение порядка здесь — содержательный результат.\n\n"
+      "Столбец `лиц` — уникальные контрагенты. Изменение состояния заявки\n"
+      "не является независимым наблюдением: одна связка порождает их сотни.\n"
+      "Строки с ⚠thin (<30 контрагентов) читать только как описательные.\n")
     return data
 
 
@@ -203,25 +220,28 @@ def _persistence(store: Store, w, times: list[float]) -> None:
         w("Слишком мало наблюдений.\n")
         return
     amount = Decimal("300000")
-    w("| страта | наблюдений с парой | различных пар | доля самой частой | σ спреда |\n")
+    w("| полоса | наблюдений с парой | различных диад | доля самой частой | σ спреда |\n")
     w("|---|---|---|---|---|\n")
     detail = []
-    for st in QUALITY_STRATA:
-        keys, sp = [], []
-        for t in times:
-            bp = best_pair(book_at(store, GLOBAL, t), amount, stratum=st)
+    per_band: dict = {n: ([], []) for n in band_names()}
+    for t in times:
+        for name, band in quality_bands(book_at(store, GLOBAL, t)):
+            bp = best_pair(band, amount)
             if bp:
-                keys.append(bp.advertiser_pair_key)
-                sp.append(float(bp.gross_spread_pct))
+                per_band[name][0].append(bp.advertiser_pair_key)
+                per_band[name][1].append(float(bp.gross_spread_pct))
+    for name in band_names():
+        keys, sp = per_band[name]
         if not keys:
-            w(f"| {st.name} | 0 | — | — | — |\n")
+            w(f"| `{name}` | 0 | — | — | — |\n")
             continue
         c = Counter(keys)
         top, n = c.most_common(1)[0]
         sd = statistics.pstdev(sp) if len(sp) > 1 else 0.0
-        w(f"| {st.name} | {len(keys)} | {len(c)} | {100*n/len(keys):.0f}% "
+        mark = " ⚠thin" if len(c) < 30 else ""
+        w(f"| `{name}` | {len(keys)} | {len(c)}{mark} | {100*n/len(keys):.0f}% "
           f"| {sd:.3f} пп |\n")
-        detail.append((st.name, top, 100 * n / len(keys), len(c)))
+        detail.append((name, top, 100 * n / len(keys), len(c)))
 
     w("\n**Как читать — это решает судьбу проекта.**\n\n")
     w("- Мало различных пар + высокая доля самой частой + σ около нуля\n"
