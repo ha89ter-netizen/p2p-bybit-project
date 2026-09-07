@@ -16,7 +16,7 @@ from decimal import Decimal
 
 from analysis.matching import iter_pairs_by_spread
 from analysis.replay import book_at, observation_times
-from config.settings import DIGEST_BUCKETS, TELEGRAM, TelegramConfig
+from config.settings import QUALITY_STRATA, DIGEST_BUCKETS, TELEGRAM, TelegramConfig
 from domain.models import Pair
 from storage.db import Store
 
@@ -54,6 +54,24 @@ def _collapse_price_levels(rows: list[Row]) -> list[Row]:
 
 
 @dataclass(frozen=True)
+class StratumRow:
+    """Срез по одной страте качества за окно.
+
+    Размеры выборки хранятся отдельно и намеренно: одна связка, провисевшая
+    три часа, даёт сотни наблюдений состояния, но это НЕ сотни независимых
+    экономических наблюдений. Читатель должен видеть, сколько за столбцом
+    стоит уникальных контрагентов и объявлений, а не только медиану.
+    """
+    name: str
+    moments: int              # моментов, где страта дала хотя бы одну пару
+    ads: int                  # уникальных объявлений, прошедших порог
+    advertisers: int          # уникальных КОНТРАГЕНТОВ — единица кластеризации
+    median_spread: Decimal | None
+    p25: Decimal | None
+    p75: Decimal | None
+
+
+@dataclass(frozen=True)
 class PaperSummary:
     trades: int
     pnl_kzt: Decimal
@@ -82,6 +100,7 @@ class Digest:
     filtered_out: int          # УНИКАЛЬНЫХ пар, отсеянных по качеству
     losing: int                # уникальных пар с отрицательным спредом
     poll_gaps: int
+    strata: tuple[StratumRow, ...] = ()
     paper: PaperSummary | None = None
 
 
@@ -118,11 +137,36 @@ def build(store: Store, host: str, window_sec: int,
     if times:
         since = max(since, min(times))
 
+    # Панель страт считается в ЭТОМ же проходе: book_at — самая дорогая
+    # операция отчёта, читать книгу второй раз ради тех же моментов незачем.
+    st_spreads: dict[str, list[Decimal]] = {q.name: [] for q in QUALITY_STRATA}
+    st_ads: dict[str, set[str]] = {q.name: set() for q in QUALITY_STRATA}
+    st_advs: dict[str, set[str]] = {q.name: set() for q in QUALITY_STRATA}
+
     # Схлопываем одну и ту же связку по всему окну.
     seen: dict[tuple[str, str], dict] = {}
     filtered: set[tuple[str, str]] = set()
     for t in times:
         book = book_at(store, host, t)
+
+        for i, q in enumerate(QUALITY_STRATA):
+            # Страты НЕПЕРЕСЕКАЮЩИЕСЯ, и это принципиально. Пороги вложены
+            # (premium ⊂ good ⊂ basic ⊂ any), поэтому максимум по вложенным
+            # множествам убывает МЕХАНИЧЕСКИ: max по надмножеству всегда
+            # не меньше max по подмножеству. Проверка «сохранился ли порядок»
+            # на вложенных стратах не может провалиться никогда и не несёт
+            # информации. Здесь каждая страта — только те, кто прошёл её порог
+            # и НЕ прошёл следующий.
+            nxt = QUALITY_STRATA[i + 1] if i + 1 < len(QUALITY_STRATA) else None
+            passing = [a for a in book if a.meets(q) and not (nxt and a.meets(nxt))]
+            for a in passing:
+                st_ads[q.name].add(a.ad_id)
+                st_advs[q.name].add(a.advertiser.key)
+            # лениво: нужна только лучшая пара момента, итератор отсортирован
+            best = next(iter_pairs_by_spread(passing, cfg.amount_kzt), None)
+            if best is not None:
+                st_spreads[q.name].append(best.gross_spread_pct)
+
         for pair in iter_pairs_by_spread(book, cfg.amount_kzt):
             key = (pair.buy_ad.ad_id, pair.sell_ad.ad_id)
             if not _passes_quality(pair, cfg):
@@ -186,7 +230,27 @@ def build(store: Store, host: str, window_sec: int,
     except Exception:                                     # noqa: BLE001
         pass          # симуляция не должна ломать дайджест
 
+    def _q(v: list[Decimal], frac: float) -> Decimal | None:
+        if not v:
+            return None
+        w = sorted(v)
+        return w[min(len(w) - 1, int(len(w) * frac))]
+
+    strata = tuple(
+        StratumRow(
+            name=(q.name if i + 1 == len(QUALITY_STRATA)
+                  else f"{q.name}\\{QUALITY_STRATA[i + 1].name}"),
+            moments=len(st_spreads[q.name]),
+            ads=len(st_ads[q.name]),
+            advertisers=len(st_advs[q.name]),
+            median_spread=_q(st_spreads[q.name], .5),
+            p25=_q(st_spreads[q.name], .25),
+            p75=_q(st_spreads[q.name], .75),
+        )
+        for i, q in enumerate(QUALITY_STRATA)
+    )
+
     return Digest(host=host, amount_kzt=cfg.amount_kzt, window_from=since,
                   window_to=now, moments=len(times), buckets=buckets,
                   bucket_totals=totals, filtered_out=len(filtered),
-                  losing=losing, poll_gaps=gaps, paper=paper)
+                  losing=losing, poll_gaps=gaps, strata=strata, paper=paper)

@@ -75,6 +75,29 @@ def render(digest: Digest, cfg: TelegramConfig = TELEGRAM) -> str:
         "",
     ]
 
+    # --- градиент по стратам: четыре числа, ради которых всё и собирается ---
+    if digest.strata:
+        lines.append("<b>ГРАДИЕНТ ПО КАЧЕСТВУ</b>")
+        table = ["  страта         медиана  IQR               ads   лиц"]
+        for st in digest.strata:
+            if st.median_spread is None:
+                table.append(f"  {st.name:<14}      —  "
+                             f"{'нет пар':<16} {st.ads:>5} {st.advertisers:>5}")
+                continue
+            iqr = f"{float(st.p25):+.2f}…{float(st.p75):+.2f}%"
+            table.append(f"  {st.name:<14} {float(st.median_spread):>+6.2f}%  "
+                         f"{iqr:<16} {st.ads:>5} {st.advertisers:>5}")
+        lines.append("<pre>" + "\n".join(table) + "</pre>")
+
+        got = [(st.name, st.median_spread) for st in digest.strata
+               if st.median_spread is not None]
+        if len(got) >= 2:
+            holds = all(got[i][1] >= got[i + 1][1] for i in range(len(got) - 1))
+            order = " > ".join(n for n, _ in got)
+            lines.append(f"<i>порядок {esc(order)} — "
+                         f"{'сохранён' if holds else 'НАРУШЕН'}</i>")
+        lines.append("")
+
     any_rows = False
     for name, _, _ in DIGEST_BUCKETS:
         rows = digest.buckets.get(name, [])

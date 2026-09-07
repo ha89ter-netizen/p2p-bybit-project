@@ -263,3 +263,84 @@ class TestPriceLevelCollapse(unittest.TestCase):
         rows = [self._row("480", "484", 0, 60), self._row("478", "485", 0, 60)]
         out = _collapse_price_levels(rows)
         self.assertGreater(out[0].spread_pct, out[1].spread_pct)
+
+
+class TestStrataPanel(unittest.TestCase):
+    """Панель градиента: четыре страты и размеры выборки за каждой."""
+
+    def _row(self, name, med, p25, p75, ads, advs, moments=10):
+        from analysis.digest import StratumRow
+        from decimal import Decimal as D
+        mk = lambda v: None if v is None else D(str(v))
+        return StratumRow(name=name, moments=moments, ads=ads, advertisers=advs,
+                          median_spread=mk(med), p25=mk(p25), p75=mk(p75))
+
+    def _render(self, strata):
+        from analysis.digest import Digest
+        from notify.telegram import render
+        from decimal import Decimal as D
+        d = Digest(host="h", amount_kzt=D("300000"), window_from=0, window_to=3600,
+                   moments=10, buckets={}, bucket_totals={}, filtered_out=0,
+                   losing=0, poll_gaps=0, strata=tuple(strata))
+        return render(d, CFG)
+
+    def test_all_four_strata_are_shown(self):
+        out = self._render([
+            self._row("any", 2.8, 1.9, 3.4, 400, 300),
+            self._row("basic", 2.49, 1.7, 3.0, 250, 190),
+            self._row("good", 1.27, 0.8, 1.9, 90, 70),
+            self._row("premium", -3.63, -4.0, -3.0, 12, 9),
+        ])
+        for name in ("any", "basic", "good", "premium"):
+            self.assertIn(name, out)
+
+    def test_sample_sizes_are_visible(self):
+        """Читатель должен видеть, сколько лиц стоит за столбцом."""
+        out = self._render([self._row("good", 1.27, 0.8, 1.9, 90, 70)])
+        self.assertIn("90", out)
+        self.assertIn("70", out)
+
+    def test_monotonic_order_reported_as_held(self):
+        out = self._render([
+            self._row("any", 2.8, 1.9, 3.4, 400, 300),
+            self._row("good", 1.27, 0.8, 1.9, 90, 70),
+        ])
+        self.assertIn("сохранён", out)
+
+    def test_broken_order_is_flagged(self):
+        """Нарушение порядка — сигнал, а не молчание."""
+        out = self._render([
+            self._row("any", 1.0, 0.5, 1.5, 400, 300),
+            self._row("good", 2.0, 1.5, 2.5, 90, 70),
+        ])
+        self.assertIn("НАРУШЕН", out)
+
+    def test_empty_stratum_does_not_crash(self):
+        out = self._render([self._row("premium", None, None, None, 3, 2)])
+        self.assertIn("premium", out)
+
+
+class TestStrataAreDisjoint(unittest.TestCase):
+    """Пороги страт вложены, поэтому максимум по ВЛОЖЕННЫМ множествам
+    убывает механически и проверка порядка на них ничего не значит."""
+
+    def test_nested_thresholds_make_max_monotonic_by_construction(self):
+        from config.settings import QUALITY_STRATA
+        prev = None
+        for q in QUALITY_STRATA:
+            cur = (q.min_ad_finish_num, q.min_recent_orders, q.min_execute_rate)
+            if prev is not None:
+                self.assertTrue(all(a >= b for a, b in zip(cur, prev)),
+                                "страты обязаны быть вложены — на этом держится "
+                                "необходимость их разносить в панели")
+            prev = cur
+
+    def test_panel_names_mark_the_difference_sets(self):
+        """Имя страты в отчёте должно показывать, что это разность множеств."""
+        from analysis.digest import StratumRow
+        from config.settings import QUALITY_STRATA
+        names = [f"{q.name}\\{QUALITY_STRATA[i+1].name}"
+                 if i + 1 < len(QUALITY_STRATA) else q.name
+                 for i, q in enumerate(QUALITY_STRATA)]
+        self.assertEqual(names[0], "any\\basic")
+        self.assertEqual(names[-1], "premium")

@@ -112,6 +112,15 @@ def run_periodic(store: Store) -> None:
     Поэтому каждая часть обёрнута отдельно: упавший Telegram не должен
     лишать нас FINDINGS.md, и наоборот.
     """
+    # Снимок ПЕРВЫМ делом: данные невосполнимы, отчёты — нет.
+    try:
+        from scripts.backup import snapshot
+        from config.settings import COLLECTOR as _C
+        out = snapshot(_C.db_path)
+        log(f"бэкап: {out.name}" if out else "бэкап: снимок за сегодня уже есть")
+    except Exception as exc:                          # noqa: BLE001
+        log(f"БЭКАП НЕ СДЕЛАН: {exc}")
+
     try:
         from scripts.export_findings import main as export_findings
         export_findings()

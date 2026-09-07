@@ -19,6 +19,7 @@ import sqlite3
 import time
 from pathlib import Path
 
+from config.settings import METHOD_VERSION
 from domain.models import Ad
 
 SCHEMA = """
@@ -37,7 +38,8 @@ CREATE TABLE IF NOT EXISTS poll_run (
     n_pages      INTEGER NOT NULL,
     total_count  INTEGER NOT NULL,   -- сколько объявлений заявляет сервер
     latency_ms   INTEGER NOT NULL,
-    error        TEXT
+    error        TEXT,
+    method_version TEXT NOT NULL DEFAULT '1.0.0'
 );
 CREATE INDEX IF NOT EXISTS ix_poll_run_t ON poll_run(host, side, started_at);
 
@@ -179,10 +181,10 @@ class Store:
                     total_count: int, latency_ms: int, error: str | None) -> None:
         self.conn.execute(
             "INSERT INTO poll_run (started_at, finished_at, host, side, complete,"
-            " n_items, n_pages, total_count, latency_ms, error)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?)",
+            " n_items, n_pages, total_count, latency_ms, error, method_version)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
             (started_at, finished_at, host, side, int(complete), n_items,
-             n_pages, total_count, latency_ms, error))
+             n_pages, total_count, latency_ms, error, METHOD_VERSION))
 
     def upsert_ads(self, ads: list[Ad]) -> tuple[int, int]:
         """Возвращает (сколько состояний записано, сколько новых объявлений)."""
