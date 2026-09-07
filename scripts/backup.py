@@ -30,9 +30,16 @@ DEFAULT_DIR = Path(os.path.expanduser(
 # от смерти SSD и не от потери ноутбука — а именно так теряются данные
 # целиком. iCloud Drive синхронизируется вне машины, поэтому снимок уезжает
 # и туда. Пустое значение отключает offsite (например на чужой машине).
-OFFSITE_DIR = Path(os.path.expanduser(os.getenv(
-    "P2P_OFFSITE_DIR",
-    "~/Library/Mobile Documents/com~apple~CloudDocs/p2p_backups")))
+def _offsite_from_env() -> Path | None:
+    """Пустая переменная = offsite отключён. Path("") даёт ".", то есть
+    текущий каталог, поэтому пустоту надо ловить до превращения в Path."""
+    raw = os.getenv("P2P_OFFSITE_DIR",
+                    "~/Library/Mobile Documents/com~apple~CloudDocs/p2p_backups")
+    raw = raw.strip()
+    return Path(os.path.expanduser(raw)) if raw else None
+
+
+OFFSITE_DIR = _offsite_from_env()
 
 
 def _sha256(path: Path) -> str:
@@ -44,7 +51,8 @@ def _sha256(path: Path) -> str:
 
 
 def snapshot(db_path: str | Path, out_dir: Path = DEFAULT_DIR,
-             stamp: str | None = None) -> Path | None:
+             stamp: str | None = None,
+             offsite: Path | None = None) -> Path | None:
     """Сделать снимок. Возвращает путь или None, если за этот день он уже есть."""
     db_path = Path(db_path)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -72,7 +80,7 @@ def snapshot(db_path: str | Path, out_dir: Path = DEFAULT_DIR,
     # снимок только на чтение: случайная перезапись должна упереться в права
     final.chmod(0o444)
     try:
-        copy_offsite(final, digest)
+        copy_offsite(final, digest, offsite=offsite)
     except Exception as exc:                      # noqa: BLE001
         # Локальный снимок уже на диске и валиден. Потерять его из-за
         # недоступного облака было бы ровно тем сценарием, от которого
@@ -85,7 +93,7 @@ def copy_offsite(snap: Path, digest: str,
                  offsite: Path | None = None) -> Path | None:
     """Отправить копию вне машины. Сбой offsite не отменяет локальный снимок."""
     dst_dir = offsite if offsite is not None else OFFSITE_DIR
-    if not str(dst_dir).strip():
+    if dst_dir is None:
         return None
     dst = dst_dir / snap.name
     if dst.exists():
@@ -118,8 +126,11 @@ def main() -> int:
         print("снимок за сегодня уже есть, ничего не делаю")
         return 0
     print(f"снимок: {out}  ({out.stat().st_size / 1_048_576:.1f} МБ)")
-    off = OFFSITE_DIR / out.name
-    print(f"offsite: {'да' if off.exists() else 'НЕТ'}  {off}")
+    if OFFSITE_DIR is None:
+        print("offsite: отключён (P2P_OFFSITE_DIR пуст)")
+    else:
+        off = OFFSITE_DIR / out.name
+        print(f"offsite: {'да' if off.exists() else 'НЕТ'}  {off}")
     return 0
 
 
