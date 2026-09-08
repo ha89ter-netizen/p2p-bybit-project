@@ -251,12 +251,28 @@ def window(hours: float = 12.0, max_moments: int = 80) -> dict:
 # Журналы прогоняют всю историю дважды — секунды, а не миллисекунды.
 # Считать их на каждый запрос значит держать панель в блокировке, поэтому
 # они пересчитываются фоновым потоком, а запрос всегда получает готовое.
-_LEDGERS: dict = {"data": None, "at": 0.0, "error": None, "busy": False}
-_LEDGER_TTL = 180.0
+_LEDGERS: dict = {"data": None, "at": 0.0, "error": None, "busy": False,
+                  "took": 0.0, "next_in": 0.0}
+
+# Пересчёт прогоняет ВСЮ историю дважды, поэтому дорожает вместе с ней:
+# ~32 с на 29 часах данных, то есть около 13 минут на месяце. Пауза
+# фиксированной быть не может — на седьмые сутки пересчёт стал бы длиннее
+# паузы, поток закрутился бы без остановки и держал бы процессор занятым
+# постоянно. Поэтому пауза кратна длительности: доля занятого времени
+# не превышает 1/(1+DUTY), то есть примерно 17%.
+_LEDGER_MIN_PAUSE = 180.0
+# Потолок держится большим намеренно. При потолке в час получасовой
+# пересчёт давал бы занятость 33% вместо обещанных 17: ограничение сверху
+# ломает саму гарантию, ради которой пауза делалась пропорциональной.
+# Шесть часов покрывают пересчёт длиной до 72 минут — с запасом к
+# прогнозу на месяц наблюдений (~13 минут).
+_LEDGER_MAX_PAUSE = 21600.0
+_LEDGER_DUTY = 5.0
 
 
 def _ledger_worker():
     while True:
+        t0 = time.time()
         try:
             _LEDGERS["busy"] = True
             data = _compute_ledgers()
@@ -265,7 +281,11 @@ def _ledger_worker():
             _LEDGERS["error"] = f"{type(exc).__name__}: {exc}"
         finally:
             _LEDGERS["busy"] = False
-        time.sleep(_LEDGER_TTL)
+        took = time.time() - t0
+        pause = min(_LEDGER_MAX_PAUSE,
+                    max(_LEDGER_MIN_PAUSE, took * _LEDGER_DUTY))
+        _LEDGERS.update(took=round(took, 1), next_in=round(pause))
+        time.sleep(pause)
 
 
 def ledgers() -> dict:
@@ -275,7 +295,14 @@ def ledgers() -> dict:
         return {"pending": True, "error": _LEDGERS.get("error"),
                 "busy": _LEDGERS.get("busy", False)}
     out = dict(d)
-    out["age_sec"] = round(time.time() - _LEDGERS["at"])
+    age = round(time.time() - _LEDGERS["at"])
+    out["age_sec"] = age
+    out["took_sec"] = _LEDGERS.get("took", 0.0)
+    out["refresh_sec"] = _LEDGERS.get("next_in", _LEDGER_MIN_PAUSE)
+    out["busy"] = _LEDGERS.get("busy", False)
+    # Устарело, если прошло заметно больше запланированной паузы: значит
+    # поток встал, и показывать это как свежие числа нельзя.
+    out["stale"] = age > out["refresh_sec"] * 2 + 60
     out["error"] = _LEDGERS.get("error")
     return out
 

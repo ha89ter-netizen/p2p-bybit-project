@@ -327,7 +327,8 @@ function renderLedgers(L) {
      <b>${Math.round(cost).toLocaleString("ru")} ₸</b> за ${r.hours} ч.
      Пропущено из-за отсутствия: ${r.skipped_absent}; из-за занятого капитала: ${r.skipped_no_capital};
      подходящей пары не было: <b>${r.skipped_no_pair}</b> раз — это и есть главное ограничение.
-     Обновлено ${L.age_sec ?? "?"} с назад.`;
+     Пересчёт занял ${L.took_sec ?? "?"} с, следующий через ${L.refresh_sec ?? "?"} с; " +
+     "обновлено ${L.age_sec ?? "?"} с назад${L.stale ? " — <b class='bad'>УСТАРЕЛО</b>" : ""}.`;
 
   const tr = r.last;
   if (tr && tr.length) {
