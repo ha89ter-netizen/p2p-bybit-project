@@ -34,6 +34,11 @@ from analysis.matching import band_names, evaluate, iter_pairs_by_spread, qualit
 from analysis.replay import book_at, observation_times  # noqa: E402
 from config.settings import COLLECTOR, MATCHING, PAPER, TELEGRAM  # noqa: E402
 from analysis.paper import two_ledgers  # noqa: E402
+from analysis.segments import collect as collect_segments, quality_vs_spread  # noqa: E402
+from capital.allocation import DEFAULT_RATE, AllocationPolicy, allocate, summarize  # noqa: E402
+from capital.portfolio import PORTFOLIO_MODELS, build_portfolios  # noqa: E402
+from capital.prices import FxProvider, NullPriceProvider  # noqa: E402
+from capital.study import run_study  # noqa: E402
 from storage.db import Store  # noqa: E402
 
 GLOBAL = "api2.bybit.com"
@@ -275,6 +280,79 @@ def ledgers() -> dict:
     return out
 
 
+def _research(realistic) -> dict:
+    """Слой Capital Lab: сегменты, распределение, портфели.
+
+    Считается там же, где журналы — один прогон истории на всё.
+    """
+    prices = NullPriceProvider()          # источника цен активов нет
+    store = Store(COLLECTOR.db_path)
+    try:
+        seg_dis = collect_segments(store, GLOBAL, AMOUNT, hours=24, mode="disjoint")
+        seg_nest = collect_segments(store, GLOBAL, AMOUNT, hours=24, mode="nested")
+    finally:
+        store.close()
+
+    policy = AllocationPolicy(rate_pct=DEFAULT_RATE)
+    events = allocate(realistic.trades, policy)
+    summary = summarize(events, policy,
+                        total_net_pnl_kzt=realistic.total_pnl_kzt)
+    ports = {n: p.valuation(prices)
+             for n, p in build_portfolios(events, PORTFOLIO_MODELS, prices).items()}
+
+    study = run_study(realistic, PAPER.capital_kzt, prices=prices)
+
+    fx = FxProvider(COLLECTOR.db_path).quote()
+
+    def dec(x):
+        return None if x is None else float(x)
+
+    return {
+        "segments": {
+            "disjoint": [m.to_dict() for m in seg_dis],
+            "nested": [m.to_dict() for m in seg_nest],
+            "quality_vs_spread": quality_vs_spread(seg_dis),
+            "selected": "good",
+        },
+        "allocation": {
+            "policy": summary.policy,
+            "rate_pct": float(summary.rate_pct),
+            "events": summary.events,
+            "contributing": summary.contributing,
+            "allocatable_kzt": dec(summary.allocatable_kzt),
+            "allocated_kzt": dec(summary.allocated_kzt),
+            "retained_kzt": dec(summary.retained_kzt),
+            "losses_kzt": dec(summary.losses_kzt),
+            "check_ok": summary.check_ok,
+            "recent": [{
+                "at": e.at, "cycle_kzt": dec(e.cycle_capital_kzt),
+                "net_kzt": dec(e.net_pnl_kzt), "rate": float(e.rate_pct),
+                "allocated_kzt": dec(e.allocated_kzt),
+                "retained_kzt": dec(e.retained_kzt), "id": e.event_id,
+            } for e in events[-10:][::-1]],
+        },
+        "portfolios": {n: {
+            "model": v["model"],
+            "weights": {k: float(w) for k, w in v["weights"].items()},
+            "contributions": v["contributions"],
+            "contributed_kzt": dec(v["contributed_kzt"]),
+            "market_value_kzt": dec(v["market_value_kzt"]),
+            "total_return_pct": dec(v["total_return_pct"]),
+            "priced": v["priced"],
+            "by_asset": {k: {"contributed_kzt": dec(a["contributed_kzt"]),
+                             "market_value_kzt": dec(a["market_value_kzt"]),
+                             "weight_pct": dec(a["weight_pct"])}
+                         for k, a in v["by_asset"].items()},
+        } for n, v in ports.items()},
+        "study": study,
+        "fx": (None if fx is None else {
+            "rate": float(fx.rate_kzt_per_usd), "source": fx.source,
+            "note": fx.note, "sample": fx.sample, "at": fx.at}),
+        "price_source": prices.name,
+        "priced": prices.available(),
+    }
+
+
 def _compute_ledgers() -> dict:
     """Два журнала: реалистичное участие и недостижимый эталон 100%."""
     store = Store(COLLECTOR.db_path)
@@ -316,6 +394,7 @@ def _compute_ledgers() -> dict:
         "participation": float(PAPER.participation_pct),
         "realistic": pack(r["realistic"], f"участие {int(PAPER.participation_pct)}%"),
         "ceiling": pack(r["ceiling"], "эталон 100%"),
+        "research": _research(r["realistic"]),
     }
 
 
