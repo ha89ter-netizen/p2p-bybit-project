@@ -9,7 +9,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from decimal import Decimal
+from decimal import ROUND_CEILING, Decimal, InvalidOperation
 from typing import Any
 
 
@@ -21,10 +21,35 @@ def _dec(v: Any, default: str = "0") -> Decimal:
 
 
 def _int(v: Any, default: int = 0) -> int:
+    """Целое из поля API.
+
+    Поля, объявленные целыми, приходят дробной строкой: в живых данных
+    встречено completeRateDay30="96.5". Прежняя версия ловила ValueError
+    и молча возвращала 0, то есть объявление с требованием 96.5% успешных
+    сделок выглядело как объявление БЕЗ требований. Тихое смещение ровно
+    в той логике, которая решает исполнимость пары.
+    """
     try:
         return int(v)
     except (TypeError, ValueError):
+        pass
+    try:
+        return int(Decimal(str(v)))          # усечение
+    except (InvalidOperation, TypeError, ValueError):
         return default
+
+
+def _int_ceil(v: Any, default: int = 0) -> int:
+    """То же, но с округлением ВВЕРХ — для требований объявления К НАМ.
+
+    Требование 96.5% при усечении до 96 сделало бы нас проходящими там,
+    где мы не проходим. Ошибаться следует в сторону строгости.
+    """
+    try:
+        d = Decimal(str(v))
+    except (InvalidOperation, TypeError, ValueError):
+        return default
+    return int(d.to_integral_value(rounding=ROUND_CEILING))
 
 
 @dataclass(frozen=True)
@@ -178,8 +203,8 @@ class Ad:
             payments=tuple(str(p) for p in (item.get("payments") or ())),
             prefs=TradingPrefs(
                 requires_kyc=bool(_int(prefs_raw.get("isKyc"))),
-                min_orders_30d=_int(prefs_raw.get("orderFinishNumberDay30")),
-                min_complete_rate_30d=_int(prefs_raw.get("completeRateDay30")),
+                min_orders_30d=_int_ceil(prefs_raw.get("orderFinishNumberDay30")),
+                min_complete_rate_30d=_int_ceil(prefs_raw.get("completeRateDay30")),
                 has_national_limit=bool(_int(prefs_raw.get("hasNationalLimit"))),
                 has_single_user_order_limit=bool(
                     _int(prefs_raw.get("hasSingleUserOrderLimit"))),

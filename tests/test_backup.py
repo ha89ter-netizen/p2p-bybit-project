@@ -127,3 +127,45 @@ class TestTestsNeverTouchRealArchive(unittest.TestCase):
             snapshot(db, root / "loc", stamp="29991231", offsite=off)
             self.assertTrue((off / "p2p-29991231.sqlite.gz").exists())
             self.assertFalse((OFFSITE_DIR / "p2p-29991231.sqlite.gz").exists())
+
+
+class TestMissingDays(unittest.TestCase):
+    """Пропущенный день должен обнаруживаться по файлам, а не по вере
+    в одну ветку кода: «снимок за сегодня уже есть» однажды прозвучало
+    при отсутствующем файле."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.db = self.root / "s.sqlite"
+        c = sqlite3.connect(self.db)
+        c.execute("CREATE TABLE poll_run (started_at REAL)")
+        c.executemany("INSERT INTO poll_run VALUES (?)",
+                      [(1788700000.0,), (1788790000.0,)])
+        c.commit(); c.close()
+        self.out = self.root / "b"
+        self.out.mkdir()
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _days(self):
+        import time
+        return sorted({time.strftime("%Y%m%d", time.localtime(t))
+                       for t in (1788700000.0, 1788790000.0)})
+
+    def test_all_days_missing_when_dir_is_empty(self):
+        from scripts.backup import missing_days
+        self.assertEqual(missing_days(self.db, self.out), self._days())
+
+    def test_present_snapshot_is_not_reported(self):
+        from scripts.backup import missing_days
+        days = self._days()
+        (self.out / f"p2p-{days[0]}.sqlite.gz").write_bytes(b"x")
+        self.assertEqual(missing_days(self.db, self.out), days[1:])
+
+    def test_nothing_missing_when_all_present(self):
+        from scripts.backup import missing_days
+        for d in self._days():
+            (self.out / f"p2p-{d}.sqlite.gz").write_bytes(b"x")
+        self.assertEqual(missing_days(self.db, self.out), [])

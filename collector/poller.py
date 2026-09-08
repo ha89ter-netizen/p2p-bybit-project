@@ -116,8 +116,14 @@ def run_periodic(store: Store) -> None:
     try:
         from scripts.backup import snapshot
         from config.settings import COLLECTOR as _C
+        from scripts.backup import missing_days
         out = snapshot(_C.db_path)
-        log(f"бэкап: {out.name}" if out else "бэкап: снимок за сегодня уже есть")
+        log(f"бэкап: {out.name}" if out
+            else "бэкап: снимок за сегодня уже есть")
+        gaps = missing_days(_C.db_path)
+        if gaps:
+            # Молчаливый пропуск дня — то же, что отсутствие копии.
+            log(f"БЭКАП: ПРОПУЩЕНЫ ДНИ {', '.join(gaps)}")
     except Exception as exc:                          # noqa: BLE001
         log(f"БЭКАП НЕ СДЕЛАН: {exc}")
 

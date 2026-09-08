@@ -119,13 +119,44 @@ def digest_of_gz(path: Path) -> str:
     return h.hexdigest()
 
 
+def missing_days(store_path: str | Path, out_dir: Path = DEFAULT_DIR) -> list[str]:
+    """Дни, за которые в базе есть наблюдения, а снимка нет.
+
+    Нужна, потому что «снимок за сегодня уже есть» однажды прозвучало при
+    отсутствующем файле, и объяснить это из журнала не удалось. Проверять
+    надо фактическое наличие файлов, а не доверять одной ветке кода.
+    """
+    import sqlite3
+    conn = sqlite3.connect(f"file:{store_path}?mode=ro", uri=True)
+    try:
+        days = {time.strftime("%Y%m%d", time.localtime(t)) for (t,) in
+                conn.execute("SELECT DISTINCT CAST(started_at AS INTEGER)"
+                             " FROM poll_run")}
+    finally:
+        conn.close()
+    have = {p.name[4:12] for p in out_dir.glob("p2p-*.sqlite.gz")} \
+        if out_dir.exists() else set()
+    return sorted(days - have)
+
+
 def main() -> int:
     from config.settings import COLLECTOR
+    gaps_before = missing_days(COLLECTOR.db_path)
     out = snapshot(COLLECTOR.db_path)
     if out is None:
-        print("снимок за сегодня уже есть, ничего не делаю")
-        return 0
+        stamp = time.strftime("%Y%m%d", time.localtime())
+        print(f"снимок за сегодня уже есть: "
+              f"{DEFAULT_DIR / f'p2p-{stamp}.sqlite.gz'}")
+        gaps = missing_days(COLLECTOR.db_path)
+        if gaps:
+            print(f"ПРОПУЩЕННЫЕ ДНИ: {', '.join(gaps)}")
+        return 1 if gaps else 0
     print(f"снимок: {out}  ({out.stat().st_size / 1_048_576:.1f} МБ)")
+    gaps = missing_days(COLLECTOR.db_path)
+    if gaps:
+        print(f"ПРОПУЩЕННЫЕ ДНИ (снимка нет, наблюдения есть): {', '.join(gaps)}")
+    elif gaps_before:
+        print(f"закрыты пропуски: {', '.join(gaps_before)}")
     if OFFSITE_DIR is None:
         print("offsite: отключён (P2P_OFFSITE_DIR пуст)")
     else:

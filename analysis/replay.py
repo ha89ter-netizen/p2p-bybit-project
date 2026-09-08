@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 from decimal import Decimal
 
-from domain.models import Ad, Advertiser, TradingPrefs
+from domain.models import Ad, Advertiser, TradingPrefs, _int_ceil
 from config.settings import COLLECTOR
 from storage.db import Store
 
@@ -69,8 +69,8 @@ def book_at(store: Store, host: str, ts: float) -> list[Ad]:
             payments=tuple(json.loads(r["payments"] or "[]")),
             prefs=TradingPrefs(
                 requires_kyc=bool(prefs_raw.get("isKyc")),
-                min_orders_30d=int(prefs_raw.get("orderFinishNumberDay30") or 0),
-                min_complete_rate_30d=int(prefs_raw.get("completeRateDay30") or 0),
+                min_orders_30d=_int_ceil(prefs_raw.get("orderFinishNumberDay30")),
+                min_complete_rate_30d=_int_ceil(prefs_raw.get("completeRateDay30")),
                 has_national_limit=bool(prefs_raw.get("hasNationalLimit")),
                 has_single_user_order_limit=bool(
                     prefs_raw.get("hasSingleUserOrderLimit")),
