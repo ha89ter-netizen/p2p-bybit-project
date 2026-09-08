@@ -20,6 +20,7 @@ import sqlite3
 import statistics
 import subprocess
 import sys
+import threading
 import time
 from decimal import Decimal
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -31,7 +32,8 @@ sys.path.insert(0, str(PROJECT))
 
 from analysis.matching import band_names, evaluate, iter_pairs_by_spread, quality_bands  # noqa: E402
 from analysis.replay import book_at, observation_times  # noqa: E402
-from config.settings import COLLECTOR, MATCHING, TELEGRAM  # noqa: E402
+from config.settings import COLLECTOR, MATCHING, PAPER, TELEGRAM  # noqa: E402
+from analysis.paper import two_ledgers  # noqa: E402
 from storage.db import Store  # noqa: E402
 
 GLOBAL = "api2.bybit.com"
@@ -241,6 +243,82 @@ def window(hours: float = 12.0, max_moments: int = 80) -> dict:
         store.close()
 
 
+# Журналы прогоняют всю историю дважды — секунды, а не миллисекунды.
+# Считать их на каждый запрос значит держать панель в блокировке, поэтому
+# они пересчитываются фоновым потоком, а запрос всегда получает готовое.
+_LEDGERS: dict = {"data": None, "at": 0.0, "error": None, "busy": False}
+_LEDGER_TTL = 180.0
+
+
+def _ledger_worker():
+    while True:
+        try:
+            _LEDGERS["busy"] = True
+            data = _compute_ledgers()
+            _LEDGERS.update(data=data, at=time.time(), error=None)
+        except Exception as exc:                        # noqa: BLE001
+            _LEDGERS["error"] = f"{type(exc).__name__}: {exc}"
+        finally:
+            _LEDGERS["busy"] = False
+        time.sleep(_LEDGER_TTL)
+
+
+def ledgers() -> dict:
+    """Готовый снимок журналов. Никогда не блокирует запрос."""
+    d = _LEDGERS.get("data")
+    if d is None:
+        return {"pending": True, "error": _LEDGERS.get("error"),
+                "busy": _LEDGERS.get("busy", False)}
+    out = dict(d)
+    out["age_sec"] = round(time.time() - _LEDGERS["at"])
+    out["error"] = _LEDGERS.get("error")
+    return out
+
+
+def _compute_ledgers() -> dict:
+    """Два журнала: реалистичное участие и недостижимый эталон 100%."""
+    store = Store(COLLECTOR.db_path)
+    try:
+        r = two_ledgers(store, GLOBAL, cfg=PAPER,
+                        participation=PAPER.participation_pct)
+    finally:
+        store.close()
+
+    def pack(x, label):
+        eq = [{"t": e.at, "cap": float(e.capital_kzt)} for e in x.equity[-240:]]
+        return {
+            "label": label,
+            "trades": x.n,
+            "start": float(x.start_capital_kzt),
+            "final": float(x.final_capital_kzt),
+            "pnl": float(x.total_pnl_kzt),
+            "return_pct": round(float(x.return_pct(x.start_capital_kzt)), 2),
+            "per_day": float(x.pnl_per_day_kzt),
+            "hours": round(x.hours, 1),
+            "outcomes": x.outcomes(),
+            "skipped_absent": x.entries_skipped_absent,
+            "skipped_no_capital": x.entries_skipped_no_capital,
+            "skipped_no_pair": x.entries_skipped_no_pair,
+            "breakeven": (round(float(x.breakeven_success_rate()) * 100, 1)
+                          if x.breakeven_success_rate() is not None else None),
+            "equity": eq,
+            "last": [{
+                "t": t.decided_at,
+                "spread": round(float((t.sell_price_expected / t.buy_price - 1) * 100), 2),
+                "buy": str(t.buy_price), "sell": str(t.sell_price_actual or "—"),
+                "pnl": float(t.pnl_kzt), "outcome": t.outcome,
+            } for t in x.trades[-14:][::-1]],
+        }
+
+    return {
+        "round_kzt": int(PAPER.capital_kzt * PAPER.deploy_pct / 100),
+        "compound": PAPER.compound,
+        "participation": float(PAPER.participation_pct),
+        "realistic": pack(r["realistic"], f"участие {int(PAPER.participation_pct)}%"),
+        "ceiling": pack(r["ceiling"], "эталон 100%"),
+    }
+
+
 class Handler(BaseHTTPRequestHandler):
     def _send(self, code, body: bytes, ctype: str):
         self.send_response(code)
@@ -259,7 +337,7 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/state":
                 data = {"health": health(), "live": live(),
                         "window": window(), "backups": backups(),
-                        "now": time.time()}
+                        "ledgers": ledgers(), "now": time.time()}
                 return self._send(200, json.dumps(data, ensure_ascii=False).encode(),
                                   "application/json; charset=utf-8")
             self._send(404, b"not found", "text/plain; charset=utf-8")
@@ -277,6 +355,7 @@ def main() -> int:
     if "--port" in sys.argv:
         port = int(sys.argv[sys.argv.index("--port") + 1])
     # 127.0.0.1, а не 0.0.0.0: снаружи машины сокет не существует.
+    threading.Thread(target=_ledger_worker, daemon=True).start()
     srv = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     print(f"панель: http://127.0.0.1:{port}   (Ctrl+C — остановить)")
     print("доступна только с этого компьютера; база открыта только на чтение")

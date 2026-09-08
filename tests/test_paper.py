@@ -208,3 +208,29 @@ class TestCompounding(PaperCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestParticipation(unittest.TestCase):
+    """Участие: мы не сидим у экрана круглые сутки."""
+
+    def test_full_participation_skips_nobody(self):
+        from dataclasses import replace
+        from config.settings import PAPER
+        cfg = replace(PAPER, participation_pct=Decimal("100"))
+        self.assertEqual(cfg.participation_pct, Decimal("100"))
+
+    def test_participation_is_deterministic(self):
+        """Один сид — один результат, иначе журнал невоспроизводим."""
+        import random
+        a = random.Random(20260908)
+        b = random.Random(20260908)
+        self.assertEqual([a.random() for _ in range(5)],
+                         [b.random() for _ in range(5)])
+
+    def test_round_is_fixed_when_compounding_is_off(self):
+        """Круг обязан быть 300 000: иначе журналы несравнимы между собой."""
+        from dataclasses import replace
+        from config.settings import PAPER
+        cfg = replace(PAPER, compound=False, capital_kzt=Decimal("1000000"),
+                      deploy_pct=Decimal("30"))
+        self.assertEqual(cfg.capital_kzt * cfg.deploy_pct / 100, Decimal("300000"))

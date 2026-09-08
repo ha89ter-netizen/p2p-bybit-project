@@ -78,6 +78,16 @@
   <div class="cols">
     <div>
       <div class="card">
+        <h2>Бумажный баланс — два журнала</h2>
+        <div class="body">
+          <div id="ledgers"></div>
+          <svg class="spark" id="eq" viewBox="0 0 600 110" preserveAspectRatio="none" style="margin-top:12px"></svg>
+          <div style="overflow-x:auto;margin-top:10px"><table id="trades"></table></div>
+        </div>
+        <div class="note" id="lednote"></div>
+      </div>
+
+      <div class="card">
         <h2>Лучшие исполнимые связки прямо сейчас</h2>
         <div class="body" style="overflow-x:auto"><table id="top"></table></div>
         <div class="note">Ничего не покупается и не продаётся: система только наблюдает.
@@ -120,6 +130,14 @@ const $ = id => document.getElementById(id);
 const fmt = (v, d = 2, sign = true) =>
   v === null || v === undefined ? "—" : (sign && v > 0 ? "+" : "") + v.toFixed(d) + "%";
 const hhmm = ts => ts ? new Date(ts * 1000).toLocaleTimeString("ru-RU", {hour:"2-digit",minute:"2-digit"}) : "—";
+// Сделки бывают вчерашние: без даты список выглядит перепутанным.
+const stamp = ts => {
+  if (!ts) return "—";
+  const d = new Date(ts * 1000), now = new Date();
+  const same = d.toDateString() === now.toDateString();
+  return same ? hhmm(ts)
+    : d.toLocaleDateString("ru-RU", {day:"2-digit",month:"2-digit"}) + " " + hhmm(ts);
+};
 const cls = v => v === null || v === undefined ? "dim" : v > 0 ? "ok" : v < 0 ? "bad" : "dim";
 
 function tbl(el, head, rows) {
@@ -233,6 +251,77 @@ function renderSpark(w) {
     names.map((n, k) => `<span style="color:${colors[k]}">■</span> ${n} `).join("") + "<br>");
 }
 
+function renderLedgers(L) {
+  const box = $("ledgers");
+  if (!L || L.pending) {
+    box.innerHTML = `<span class="dim">журналы считаются${L && L.error ? " — ошибка: " + L.error : "…"}</span>`;
+    return;
+  }
+  const card = (x, main) => `
+    <div style="flex:1;min-width:230px;background:${main ? "var(--panel2)" : "transparent"};
+                border:1px solid var(--line);padding:11px 13px">
+      <div class="k" style="font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--mute)">${x.label}</div>
+      <div style="font-family:var(--mono);font-size:21px;font-weight:500;margin:5px 0 2px"
+           class="${x.pnl > 0 ? "ok" : x.pnl < 0 ? "bad" : "dim"}">
+        ${x.pnl > 0 ? "+" : ""}${Math.round(x.pnl).toLocaleString("ru")} ₸
+      </div>
+      <div style="font-family:var(--mono);font-size:12px;color:var(--dim)">
+        ${Math.round(x.final).toLocaleString("ru")} ₸ · ${x.return_pct > 0 ? "+" : ""}${x.return_pct}%
+      </div>
+      <div style="font-size:11px;color:var(--mute);margin-top:6px">
+        сделок ${x.trades} за ${x.hours} ч · ${Math.round(x.per_day).toLocaleString("ru")} ₸/сут<br>
+        безубыток ${x.breakeven === null ? "—" : x.breakeven + "%"} успешных
+      </div>
+    </div>`;
+  box.innerHTML = `<div style="display:flex;gap:10px;flex-wrap:wrap">
+      ${card(L.realistic, true)}${card(L.ceiling, false)}</div>`;
+
+  const r = L.realistic, c = L.ceiling;
+  const cost = c.pnl - r.pnl;
+  $("lednote").innerHTML =
+    `Круг фиксированный <b>${L.round_kzt.toLocaleString("ru")} ₸</b>, реинвестирование выключено.
+     «Эталон 100%» человеку недостижим — он показывает, во сколько обходится наше отсутствие:
+     <b>${Math.round(cost).toLocaleString("ru")} ₸</b> за ${r.hours} ч.
+     Пропущено из-за отсутствия: ${r.skipped_absent}; из-за занятого капитала: ${r.skipped_no_capital};
+     подходящей пары не было: <b>${r.skipped_no_pair}</b> раз — это и есть главное ограничение.
+     Обновлено ${L.age_sec ?? "?"} с назад.`;
+
+  const tr = r.last;
+  if (tr && tr.length) {
+    tbl($("trades"),
+      [["время"],["спред","r"],["купил","r"],["продал","r"],["итог, ₸","r"],["исход"]],
+      tr.map(t => [
+        `<td class="dim">${stamp(t.t)}</td>`,
+        `<td class="r ${cls(t.spread)}">${fmt(t.spread)}</td>`,
+        `<td class="r">${t.buy}</td>`,
+        `<td class="r">${t.sell}</td>`,
+        `<td class="r ${t.pnl > 0 ? "ok" : t.pnl < 0 ? "bad" : "dim"}">${t.pnl > 0 ? "+" : ""}${Math.round(t.pnl).toLocaleString("ru")}</td>`,
+        `<td class="${t.outcome === "filled" ? "ok" : "warn"}">${t.outcome}</td>`,
+      ]));
+  }
+  renderEquity(L);
+}
+
+function renderEquity(L) {
+  const svg = $("eq");
+  const series = [["#4fbfa8", L.realistic.equity], ["#5aa7c9", L.ceiling.equity]];
+  const all = series.flatMap(([, e]) => e.map(p => p.cap));
+  if (all.length < 2) { svg.innerHTML = ""; return; }
+  let lo = Math.min(...all), hi = Math.max(...all);
+  const pad = (hi - lo) * .1 || 1; lo -= pad; hi += pad;
+  let out = "";
+  series.forEach(([col, e]) => {
+    if (e.length < 2) return;
+    const X = i => (i / (e.length - 1)) * 600;
+    const Y = v => 105 - ((v - lo) / (hi - lo)) * 100;
+    out += `<path d="${e.map((p, i) => (i ? "L" : "M") + X(i).toFixed(1) + " " + Y(p.cap).toFixed(1)).join(" ")}"
+            fill="none" stroke="${col}" stroke-width="1.6"/>`;
+  });
+  out += `<text x="4" y="12" fill="#5d7176" font-size="10" font-family="ui-monospace,monospace">${Math.round(hi).toLocaleString("ru")} ₸</text>`;
+  out += `<text x="4" y="105" fill="#5d7176" font-size="10" font-family="ui-monospace,monospace">${Math.round(lo).toLocaleString("ru")} ₸</text>`;
+  svg.innerHTML = out;
+}
+
 function renderBackups(b) {
   if (!b.files.length) { $("bk").innerHTML = "<tbody><tr><td class='bad'>снимков нет</td></tr></tbody>"; return; }
   tbl($("bk"), [["файл"],["размер","r"],["вне машины","r"]],
@@ -266,6 +355,7 @@ async function tick() {
     renderTop(d.live); renderBandsNow(d.live);
     renderBandsWin(d.window); renderSpark(d.window);
     renderBackups(d.backups); renderPolls(d.health);
+    renderLedgers(d.ledgers);
     $("updated").textContent = "обновлено " + new Date().toLocaleTimeString("ru-RU");
     $("foot").textContent = `книга на ${hhmm(d.live.at)} · buy ${d.live.buy} / sell ${d.live.sell} заявок · `
       + `лучший бид ${d.live.best_sell ?? "—"} / аск ${d.live.best_buy ?? "—"} ₸`;

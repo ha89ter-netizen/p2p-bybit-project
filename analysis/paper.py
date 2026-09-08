@@ -35,6 +35,7 @@ API, а знак результата определяют именно они. 
 
 from __future__ import annotations
 
+import random as _random
 from dataclasses import dataclass, field
 from decimal import Decimal
 
@@ -95,6 +96,7 @@ class PaperResult:
     entries_skipped_no_capital: int = 0
     entries_skipped_no_pair: int = 0
     entries_skipped_exhausted: int = 0
+    entries_skipped_absent: int = 0      # возможность была, нас не было
 
     # Диагностика достоверности: сколько раз мы «торговали» объявление,
     # у которого за всё время наблюдения не сдвинулся executedQuantity.
@@ -260,6 +262,8 @@ def simulate(store: Store, host: str, cfg: PaperConfig = PAPER,
     me = MyProfile(completed_orders_30d=cfg.my_orders_30d,
                    completion_rate_30d=cfg.my_rate_30d)
     black = Blacklist(min_appearances=cfg.blacklist_after)
+    # Отбор участия детерминирован сидом: пересчёт даёт тот же результат.
+    rng = _random.Random(cfg.participation_seed)
 
     def position_size() -> Decimal:
         base = capital if cfg.compound else cfg.capital_kzt
@@ -312,6 +316,14 @@ def simulate(store: Store, host: str, cfg: PaperConfig = PAPER,
             pair = None                     # шаг 3: несовместимые условия ног
         if pair is None:
             res.entries_skipped_no_pair += 1
+            continue
+
+        # Возможность найдена. Успели ли мы к ней? Бросок делается ТОЛЬКО
+        # здесь, иначе последовательность зависела бы от числа пустых
+        # моментов и результат перестал бы быть воспроизводимым.
+        if cfg.participation_pct < 100 and \
+                rng.random() * 100 >= float(cfg.participation_pct):
+            res.entries_skipped_absent += 1
             continue
 
         # --- решение принято в t. Дальше только реально записанные данные ---
@@ -381,3 +393,25 @@ def simulate(store: Store, host: str, cfg: PaperConfig = PAPER,
     res.final_capital_kzt = capital
     res.blacklisted = black.blocked()
     return res
+
+
+def two_ledgers(store: Store, host: str, cfg: PaperConfig = PAPER,
+                since: float | None = None,
+                participation: Decimal = Decimal("45")) -> dict:
+    """Два журнала на одних и тех же данных.
+
+    «Реалистичный» — берём только `participation`% возможностей, потому что
+    круглые сутки у экрана никто не сидит. «Эталон» — 100%: верхняя граница,
+    показывающая, сколько стоит наше отсутствие, а не план действий.
+
+    Оба считаются по одной истории и с одним размером круга, поэтому
+    сравнимы напрямую.
+    """
+    from dataclasses import replace as _replace
+    out = {}
+    for name, pct in (("realistic", participation), ("ceiling", Decimal("100"))):
+        out[name] = simulate(store, host,
+                             cfg=_replace(cfg, participation_pct=pct),
+                             since=since)
+    out["participation_pct"] = participation
+    return out
