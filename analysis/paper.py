@@ -104,6 +104,7 @@ class PaperResult:
     # прокрутили через него 1.5 млн — значит оно НЕ было исполнимым,
     # и виноваты условия, которых мы не видим в API.
     trades_on_untouched_ads: int = 0
+    reprices: int = 0                    # пришлось искать другую ногу
 
     # ---- агрегаты ----
 
@@ -349,16 +350,40 @@ def simulate(store: Store, host: str, cfg: PaperConfig = PAPER,
         settle_book = book_at(store, host, settle_at)
         sell_still = _ad_at(settle_book, pair.sell_ad.ad_id)
 
-        if sell_still is not None and sell_still.supports(amount):
-            sell_price, outcome = sell_still.price, "filled"
+        # Продаём по ЛУЧШЕЙ доступной цене, а не обязательно тому же
+        # контрагенту. Заглядывания в будущее здесь нет: книга на момент
+        # расчёта наблюдаема целиком.
+        #
+        # Прежняя версия слепо исполняла исходное объявление, если оно ещё
+        # существовало. Наблюдённый случай: контрагент переставил цену с
+        # 485.00 на 467.00 за время перевода, а рядом стояло 128 подходящих
+        # объявлений с лучшей ценой 486.00. Симулятор продавал по 467.00 и
+        # терял 11 935 ₸ на ровном месте, моделируя трейдера, который этого
+        # не заметил.
+        # Фильтр на выходе ТОТ ЖЕ, что на входе. Иначе получалось, что мы
+        # продаём контрагенту, которому на входе отказали бы: не прошедшему
+        # требования к нам, простоявшему без сделок, медленному на релизе,
+        # выбросу по цене или из чёрного списка. Такая асимметрия завышает
+        # результат бесплатно.
+        settle_median = _market_median(settle_book)
+        alts = [a for a in settle_book
+                if a.side == "0" and a.supports(amount)
+                and _quality_ok(a, cfg)
+                and screen_ad(a, settle_at, settle_median.get(a.side, Decimal(0)))]
+        if sell_still is not None and sell_still.supports(amount) \
+                and _quality_ok(sell_still, cfg) and sell_still not in alts:
+            alts.append(sell_still)
+
+        if alts:
+            best = max(alts, key=lambda a: a.price)
+            same_ad = sell_still is not None and best.ad_id == sell_still.ad_id
+            unchanged = same_ad and best.price == pair.sell_ad.price
+            sell_price = best.price
+            outcome = "filled" if unchanged else "slipped"
+            if not unchanged:
+                res.reprices += 1
         else:
-            # объявление ушло — продаём по лучшему, что реально было
-            alts = [a for a in settle_book
-                    if a.side == "0" and a.supports(amount) and _quality_ok(a, cfg)]
-            if alts:
-                best = max(alts, key=lambda a: a.price)
-                sell_price, outcome = best.price, "slipped"
-            else:
+            if True:
                 # продать некому: остались с USDT на руках
                 res.trades.append(PaperTrade(
                     decided_at=t, executed_at=exec_at, settled_at=settle_at,

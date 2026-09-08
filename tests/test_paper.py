@@ -234,3 +234,34 @@ class TestParticipation(unittest.TestCase):
         cfg = replace(PAPER, compound=False, capital_kzt=Decimal("1000000"),
                       deploy_pct=Decimal("30"))
         self.assertEqual(cfg.capital_kzt * cfg.deploy_pct / 100, Decimal("300000"))
+
+
+class TestSettleSymmetry(unittest.TestCase):
+    """Фильтр на выходе обязан совпадать с фильтром на входе.
+
+    Асимметрия давала бесплатную прибыль: симулятор продавал контрагенту,
+    которому на входе отказал бы. На реальных данных это завышало итог
+    со 104 934 до 139 747 ₸ — на треть, из ничего.
+    """
+
+    def test_settle_branch_applies_entry_screening(self):
+        import inspect
+        from analysis import paper
+        src = inspect.getsource(paper.simulate)
+        settle = src[src.index("settle_book = book_at"):]
+        self.assertIn("screen_ad(a, settle_at", settle,
+                      "альтернативы на продажу обязаны проходить тот же скрин")
+        self.assertIn("_quality_ok(a, cfg)", settle)
+
+    def test_settle_branch_takes_the_best_price(self):
+        """Продавать в переставленное объявление, когда рядом лучше, —
+        моделировать трейдера, который этого не заметил."""
+        import inspect
+        from analysis import paper
+        src = inspect.getsource(paper.simulate)
+        self.assertIn("max(alts, key=lambda a: a.price)", src)
+
+    def test_reprice_is_counted(self):
+        """Смена ноги должна быть видна в диагностике, а не молча."""
+        from analysis.paper import PaperResult
+        self.assertIn("reprices", PaperResult.__dataclass_fields__)
