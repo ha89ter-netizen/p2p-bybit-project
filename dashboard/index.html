@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>P2P USDT/KZT — наблюдение</title>
+<style>
+  :root {
+    --bg:#0e1214; --panel:#151d20; --panel2:#1b2528; --line:#263438;
+    --ink:#e3ebec; --dim:#8ba0a5; --mute:#5d7176;
+    --ok:#4fbfa8; --bad:#e0803f; --warn:#d4b23f; --accent:#5aa7c9;
+    --mono:ui-monospace,"SF Mono",Menlo,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.5}
+  .wrap{max-width:1400px;margin:0 auto;padding:16px 20px 60px}
+
+  header{display:flex;align-items:baseline;gap:16px;flex-wrap:wrap;
+         border-bottom:1px solid var(--line);padding-bottom:12px;margin-bottom:18px}
+  h1{font-size:17px;margin:0;font-weight:600;letter-spacing:-.01em}
+  .sub{color:var(--mute);font-family:var(--mono);font-size:11.5px}
+  #updated{margin-left:auto;font-family:var(--mono);font-size:11.5px;color:var(--mute)}
+
+  .strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:1px;
+         background:var(--line);border:1px solid var(--line);margin-bottom:18px}
+  .cell{background:var(--panel);padding:11px 13px}
+  .cell .k{font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--mute);margin-bottom:4px}
+  .cell .v{font-family:var(--mono);font-size:18px;font-weight:500;letter-spacing:-.02em}
+  .cell .n{font-size:11px;color:var(--mute);margin-top:2px}
+  .ok{color:var(--ok)} .bad{color:var(--bad)} .warn{color:var(--warn)} .dim{color:var(--dim)}
+
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media (max-width:1000px){.cols{grid-template-columns:1fr}}
+
+  .card{background:var(--panel);border:1px solid var(--line);margin-bottom:18px}
+  .card h2{font-size:12px;letter-spacing:.07em;text-transform:uppercase;color:var(--dim);
+           margin:0;padding:11px 14px;border-bottom:1px solid var(--line);font-weight:600}
+  .card .body{padding:12px 14px}
+  .card .note{padding:9px 14px;border-top:1px solid var(--line);color:var(--mute);font-size:11.5px}
+
+  table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:12.5px;
+        font-variant-numeric:tabular-nums}
+  th{text-align:left;color:var(--mute);font-weight:400;font-size:10.5px;letter-spacing:.05em;
+     text-transform:uppercase;padding:0 10px 7px 0;white-space:nowrap}
+  td{padding:5px 10px 5px 0;border-top:1px solid var(--line);white-space:nowrap}
+  td.r,th.r{text-align:right;padding-right:16px}
+  td:last-child,th:last-child{padding-right:0}
+  tbody tr:hover{background:var(--panel2)}
+  .nick{font-family:var(--sans);color:var(--dim);max-width:140px;overflow:hidden;
+        text-overflow:ellipsis;display:inline-block;vertical-align:bottom}
+  .pill{font-size:10px;padding:1px 6px;border:1px solid var(--line);color:var(--mute);border-radius:2px}
+
+  .bar{height:6px;background:var(--panel2);position:relative;overflow:hidden;margin-top:6px}
+  .bar i{position:absolute;left:0;top:0;bottom:0;background:var(--accent)}
+
+  .spark{display:block;width:100%;height:110px}
+  .banner{padding:10px 14px;font-size:12.5px;border:1px solid;margin-bottom:18px}
+  .banner.err{border-color:var(--bad);color:var(--bad);background:#2a1a12}
+  .banner.warnb{border-color:var(--warn);color:var(--warn);background:#282314}
+  .hidden{display:none}
+  footer{margin-top:8px;color:var(--mute);font-size:11.5px;font-family:var(--mono)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>P2P USDT/KZT</h1>
+    <span class="sub" id="amt"></span>
+    <span id="updated">загрузка…</span>
+  </header>
+
+  <div id="alerts"></div>
+
+  <div class="strip" id="strip"></div>
+
+  <div class="cols">
+    <div>
+      <div class="card">
+        <h2>Лучшие исполнимые связки прямо сейчас</h2>
+        <div class="body" style="overflow-x:auto"><table id="top"></table></div>
+        <div class="note">Ничего не покупается и не продаётся: система только наблюдает.
+          Это то, что <em>было бы</em> исполнимо на указанную сумму.</div>
+      </div>
+
+      <div class="card">
+        <h2>Полосы качества — текущая книга</h2>
+        <div class="body" style="overflow-x:auto"><table id="bandsnow"></table></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="card">
+        <h2>Окно 12 ч — устойчивость порядка</h2>
+        <div class="body">
+          <svg class="spark" id="spark" viewBox="0 0 600 110" preserveAspectRatio="none"></svg>
+          <div style="overflow-x:auto;margin-top:10px"><table id="bandswin"></table></div>
+        </div>
+        <div class="note" id="violnote"></div>
+      </div>
+
+      <div class="card">
+        <h2>Снимки базы</h2>
+        <div class="body" style="overflow-x:auto"><table id="bk"></table></div>
+      </div>
+
+      <div class="card">
+        <h2>Последние обходы</h2>
+        <div class="body" style="overflow-x:auto"><table id="polls"></table></div>
+      </div>
+    </div>
+  </div>
+
+  <footer id="foot"></footer>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const fmt = (v, d = 2, sign = true) =>
+  v === null || v === undefined ? "—" : (sign && v > 0 ? "+" : "") + v.toFixed(d) + "%";
+const hhmm = ts => ts ? new Date(ts * 1000).toLocaleTimeString("ru-RU", {hour:"2-digit",minute:"2-digit"}) : "—";
+const cls = v => v === null || v === undefined ? "dim" : v > 0 ? "ok" : v < 0 ? "bad" : "dim";
+
+function tbl(el, head, rows) {
+  el.innerHTML =
+    "<thead><tr>" + head.map(h => `<th class="${h[1] || ""}">${h[0]}</th>`).join("") + "</tr></thead>" +
+    "<tbody>" + rows.map(r => "<tr>" + r.join("") + "</tr>").join("") + "</tbody>";
+}
+
+function renderAlerts(h, b) {
+  const out = [];
+  if (!h.alive) out.push(`<div class="banner err">КОЛЛЕКТОР НЕ РАБОТАЕТ — данные не собираются. Запустить: <code>cd ~/Documents/p2p_research &amp;&amp; ./run.sh</code></div>`);
+  else if (h.lag_sec > 120) out.push(`<div class="banner warnb">Последний обход ${h.lag_sec} с назад — больше обычного.</div>`);
+  if (b.missing && b.missing.length) out.push(`<div class="banner err">НЕТ СНИМКОВ ЗА ДНИ: ${b.missing.join(", ")}</div>`);
+  if (h.disk_free_gb < 3) out.push(`<div class="banner err">МАЛО МЕСТА НА ДИСКЕ: ${h.disk_free_gb} ГБ</div>`);
+  else if (h.disk_free_gb < 8) out.push(`<div class="banner warnb">Места на диске ${h.disk_free_gb} ГБ; база растёт на ${h.growth_mb_per_day} МБ/сутки.</div>`);
+  $("alerts").innerHTML = out.join("");
+}
+
+function renderStrip(h) {
+  const c = [
+    ["Сбор", h.alive ? `<span class="ok">идёт</span>` : `<span class="bad">СТОП</span>`,
+      h.alive ? `отставание ${h.lag_sec} с` : "процесс не найден"],
+    ["Покрытие", `<span class="${h.coverage_pct > 90 ? "ok" : "warn"}">${h.coverage_pct}%</span>`,
+      `${h.incomplete} неполных из ${h.polls}`],
+    ["Наблюдений", `${h.hours} ч`, `${h.counts.ad_state.toLocaleString("ru")} изменений`],
+    ["Заявок", h.counts.ad.toLocaleString("ru"), `${h.counts.advertiser} контрагентов`],
+    ["Окно прогона", `${h.window_pct}%`,
+      `${h.window_days_left} сут до 07.10<div class="bar"><i style="width:${Math.min(h.window_pct,100)}%"></i></div>`],
+    ["База", `${h.db_mb} МБ`, `+${h.growth_mb_per_day} МБ/сутки`],
+    ["Диск", `<span class="${h.disk_free_gb < 3 ? "bad" : h.disk_free_gb < 8 ? "warn" : "ok"}">${h.disk_free_gb} ГБ</span>`, "свободно"],
+    ["Telegram", h.telegram ? `<span class="ok">вкл</span>` : `<span class="dim">выкл</span>`,
+      h.digest_hours.map(x => String(x).padStart(2, "0") + ":00").join(", ")],
+  ];
+  $("strip").innerHTML = c.map(([k, v, n]) =>
+    `<div class="cell"><div class="k">${k}</div><div class="v">${v}</div><div class="n">${n}</div></div>`).join("");
+}
+
+function renderTop(l) {
+  if (!l.top.length) { $("top").innerHTML = "<tbody><tr><td class='dim'>исполнимых связок нет</td></tr></tbody>"; return; }
+  tbl($("top"),
+    [["спред","r"],["купить","r"],["продать","r"],["остаток buy","r"],["остаток sell","r"],["контрагенты"],["рельсы"]],
+    l.top.map(t => [
+      `<td class="r ${cls(t.spread)}">${fmt(t.spread)}</td>`,
+      `<td class="r">${t.buy}</td>`,
+      `<td class="r">${t.sell}</td>`,
+      `<td class="r dim">${Math.round(+t.buy_left)}</td>`,
+      `<td class="r dim">${Math.round(+t.sell_left)}</td>`,
+      `<td><span class="nick" title="${t.buy_nick} → ${t.sell_nick}">${t.buy_nick} → ${t.sell_nick}</span>
+           <span class="pill">${t.buy_orders}/${t.buy_rate}% · ${t.sell_orders}/${t.sell_rate}%</span></td>`,
+      `<td class="dim">${t.pays.join(" ")}</td>`,
+    ]));
+}
+
+function renderBandsNow(l) {
+  tbl($("bandsnow"),
+    [["полоса"],["лучшая","r"],["медиана","r"],["пар","r"],["заявок","r"],["лиц","r"]],
+    l.bands.map(b => [
+      `<td>${b.name}</td>`,
+      `<td class="r ${cls(b.best)}">${fmt(b.best)}</td>`,
+      `<td class="r ${cls(b.median)}">${fmt(b.median)}</td>`,
+      `<td class="r dim">${b.pairs}</td>`,
+      `<td class="r dim">${b.ads}</td>`,
+      `<td class="r ${b.advertisers < 30 ? "warn" : "dim"}">${b.advertisers}</td>`,
+    ]));
+}
+
+function renderBandsWin(w) {
+  tbl($("bandswin"),
+    [["полоса"],["лучшая, мед.","r"],["IQR","r"],["все пары","r"],["лиц","r"],["диад","r"]],
+    w.rows.map(r => [
+      `<td>${r.name}</td>`,
+      `<td class="r ${cls(r.best_median)}">${fmt(r.best_median)}</td>`,
+      `<td class="r dim">${r.p25 === null ? "—" : fmt(r.p25) + "…" + fmt(r.p75)}</td>`,
+      `<td class="r ${cls(r.all_median)}">${fmt(r.all_median)}</td>`,
+      `<td class="r dim">${r.advertisers}</td>`,
+      `<td class="r ${r.thin ? "warn" : "dim"}">${r.dyads}${r.thin ? " ⚠" : ""}</td>`,
+    ]));
+  $("violnote").innerHTML = w.checked
+    ? `Порядок полос нарушен в <b class="${w.violation_pct > 50 ? "bad" : "warn"}">${w.violations} из ${w.checked}</b> моментов (${w.violation_pct}%).
+       На вложенных стратах он не мог бы нарушиться ни разу — потому и считаем на непересекающихся.`
+    : "недостаточно моментов";
+}
+
+function renderSpark(w) {
+  const svg = $("spark"), names = w.rows.map(r => r.name);
+  const colors = ["#5aa7c9", "#4fbfa8", "#d4b23f", "#e0803f"];
+  const pts = w.series;
+  if (pts.length < 2) { svg.innerHTML = `<text x="8" y="20" fill="#5d7176" font-size="11">мало точек</text>`; return; }
+  let lo = Infinity, hi = -Infinity;
+  pts.forEach(p => names.forEach(n => { const v = p[n]; if (v !== null && v !== undefined) { lo = Math.min(lo, v); hi = Math.max(hi, v); } }));
+  if (!isFinite(lo)) { svg.innerHTML = ""; return; }
+  const pad = (hi - lo) * .12 || 1; lo -= pad; hi += pad;
+  const X = i => (i / (pts.length - 1)) * 600;
+  const Y = v => 105 - ((v - lo) / (hi - lo)) * 100;
+  let out = "";
+  if (lo < 0 && hi > 0) out += `<line x1="0" y1="${Y(0)}" x2="600" y2="${Y(0)}" stroke="#263438" stroke-width="1"/>`;
+  names.forEach((n, k) => {
+    let d = "", started = false;
+    pts.forEach((p, i) => {
+      const v = p[n];
+      if (v === null || v === undefined) { started = false; return; }
+      d += (started ? "L" : "M") + X(i).toFixed(1) + " " + Y(v).toFixed(1) + " ";
+      started = true;
+    });
+    if (d) out += `<path d="${d}" fill="none" stroke="${colors[k]}" stroke-width="1.6" stroke-linejoin="round"/>`;
+  });
+  out += `<text x="4" y="12" fill="#5d7176" font-size="10" font-family="ui-monospace,monospace">${hi.toFixed(1)}%</text>`;
+  out += `<text x="4" y="105" fill="#5d7176" font-size="10" font-family="ui-monospace,monospace">${lo.toFixed(1)}%</text>`;
+  svg.innerHTML = out;
+  $("violnote").insertAdjacentHTML("afterbegin",
+    names.map((n, k) => `<span style="color:${colors[k]}">■</span> ${n} `).join("") + "<br>");
+}
+
+function renderBackups(b) {
+  if (!b.files.length) { $("bk").innerHTML = "<tbody><tr><td class='bad'>снимков нет</td></tr></tbody>"; return; }
+  tbl($("bk"), [["файл"],["размер","r"],["вне машины","r"]],
+    b.files.slice(-6).reverse().map(f => [
+      `<td>${f.name}</td>`,
+      `<td class="r dim">${f.mb} МБ</td>`,
+      `<td class="r ${f.offsite ? "ok" : "warn"}">${f.offsite ? "есть" : "НЕТ"}</td>`,
+    ]));
+}
+
+function renderPolls(h) {
+  tbl($("polls"), [["время"],["хост"],["ст."],["заявок","r"],["мс","r"],["статус"]],
+    h.recent.map(p => [
+      `<td class="dim">${hhmm(p.started)}</td>`,
+      `<td>${p.host.replace("api2.", "")}</td>`,
+      `<td class="dim">${p.side === "1" ? "buy" : "sell"}</td>`,
+      `<td class="r">${p.items}</td>`,
+      `<td class="r dim">${p.ms}</td>`,
+      `<td class="${p.complete ? "ok" : "bad"}">${p.complete ? "ok" : (p.err || "сбой")}</td>`,
+    ]));
+}
+
+async function tick() {
+  try {
+    const r = await fetch("/api/state", {cache: "no-store"});
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    $("amt").textContent = `круг ${d.health.amount.toLocaleString("ru")} ₸ · только наблюдение, сделки не совершаются`;
+    renderAlerts(d.health, d.backups);
+    renderStrip(d.health);
+    renderTop(d.live); renderBandsNow(d.live);
+    renderBandsWin(d.window); renderSpark(d.window);
+    renderBackups(d.backups); renderPolls(d.health);
+    $("updated").textContent = "обновлено " + new Date().toLocaleTimeString("ru-RU");
+    $("foot").textContent = `книга на ${hhmm(d.live.at)} · buy ${d.live.buy} / sell ${d.live.sell} заявок · `
+      + `лучший бид ${d.live.best_sell ?? "—"} / аск ${d.live.best_buy ?? "—"} ₸`;
+  } catch (e) {
+    $("updated").innerHTML = `<span class="bad">ошибка: ${e.message}</span>`;
+  }
+}
+tick();
+setInterval(tick, 20000);
+</script>
+</body>
+</html>
