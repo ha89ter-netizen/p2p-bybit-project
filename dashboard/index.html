@@ -313,8 +313,14 @@ function renderLedgers(L) {
       </div>
       <div style="font-size:11px;color:var(--mute);margin-top:6px">
         сделок ${x.trades} за ${x.hours} ч · ${Math.round(x.per_day).toLocaleString("ru")} ₸/сут<br>
-        безубыток ${x.breakeven === null ? "—" : x.breakeven + "%"} успешных
+        безубыток ${x.breakeven === null ? "—" : x.breakeven + "%"} успешных<br>
+        концентрация: один ${x.top1_pct ?? "—"}% · двое ${x.top2_pct ?? "—"}% ·
+        лиц ${x.advertisers ?? "—"}
       </div>
+      ${x.implausible ? `<div style="margin-top:8px;border:1px solid var(--bad);
+         color:var(--bad);padding:5px 8px;font-size:11px">
+         ⚠ ${x.daily_pct}%/сут — выше потолка правдоподобия ${x.plausible_limit}%.
+         Вероятнее ошибка модели, чем найденная неэффективность.</div>` : ""}
     </div>`;
   box.innerHTML = `<div style="display:flex;gap:10px;flex-wrap:wrap">
       ${card(L.realistic, true)}${card(L.ceiling, false)}</div>`;
@@ -465,6 +471,7 @@ function renderResearch(R, L) {
      R.priced ? "Preliminary Data" : "Insufficient Data"],
     ["Как доля отчисления влияет на ликвидность, рост и риск?",
      R.priced ? "Collecting Data" : "Insufficient Data"],
+    ["В какое время суток рынок даёт возможности?", "Collecting Data"],
     ["Насколько процесс автоматизируем?", "Preliminary Data"],
   ];
   $("rq").innerHTML = qs.map(([q, st]) =>

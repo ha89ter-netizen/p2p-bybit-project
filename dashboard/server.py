@@ -406,6 +406,16 @@ def _compute_ledgers() -> dict:
             "skipped_no_pair": x.entries_skipped_no_pair,
             "breakeven": (round(float(x.breakeven_success_rate()) * 100, 1)
                           if x.breakeven_success_rate() is not None else None),
+            "hhi": x.concentration_hhi(),
+            "top1_pct": x.top_share(1),
+            "top2_pct": x.top_share(2),
+            "advertisers": len([v for v in x.profit_by_advertiser().values() if v > 0]),
+            "daily_pct": (None if x.daily_return_pct() is None
+                          else round(float(x.daily_return_pct()), 2)),
+            "implausible": x.implausible(),
+            "plausible_limit": float(PAPER.plausible_daily_return_pct),
+            "adv_limit_hits": x.entries_skipped_adv_limit,
+            "max_per_adv": PAPER.max_trades_per_advertiser,
             "equity": eq,
             "last": [{
                 "t": t.decided_at,

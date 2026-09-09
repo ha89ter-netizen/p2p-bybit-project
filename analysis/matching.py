@@ -77,6 +77,33 @@ def is_hard_rejected(pair: Pair) -> bool:
 
 
 
+
+def pair_spread_quantile(ads: list[Ad], amount_kzt: Decimal,
+                         q: Decimal = Decimal("0.99"),
+                         cfg: MatchingConfig = MATCHING) -> Decimal | None:
+    """Спред пары на заданном квантиле распределения. None — пар нет.
+
+    Зачем это вместо максимума. Максимум по N парам растёт вместе с N сам
+    по себе, даже когда распределение неизменно: в большей выборке хвост
+    длиннее. Замерено на живых данных — при росте книги с 70 до 466
+    объявлений «лучшая пара» шла с +1.41% до +6.18%, а МЕДИАНА пар всё это
+    время стояла около −10%. То есть рынок не менялся, менялось только то,
+    как далеко в хвост мы дотягиваемся.
+
+    Метрика на максимуме поэтому несравнима между моментами разной
+    плотности — ночная книга и дневная меряются разными линейками.
+    Квантиль тоже смещается с ростом выборки, но несравнимо слабее.
+
+    Для ТОРГОВОГО правила максимум остаётся правильным: берём лучшее, что
+    есть. Здесь речь только об ИЗМЕРЕНИИ рынка.
+    """
+    spreads = [p.gross_spread_pct for p in iter_pairs_by_spread(ads, amount_kzt, cfg=cfg)]
+    if not spreads:
+        return None
+    spreads.sort()
+    idx = int(len(spreads) * float(q))
+    return spreads[min(idx, len(spreads) - 1)]
+
 def quality_bands(ads: list[Ad],
                   strata: tuple[QualityStratum, ...] = QUALITY_STRATA
                   ) -> list[tuple[str, list[Ad]]]:

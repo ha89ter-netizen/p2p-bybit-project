@@ -62,6 +62,8 @@ class PaperTrade:
     outcome: str                           # filled | slipped | buy_leg_vanished | stuck
     buy_ad_id: str
     sell_ad_id: str
+    buy_adv: str = ""
+    sell_adv: str = ""
 
     @property
     def spread_expected_pct(self) -> Decimal:
@@ -105,12 +107,57 @@ class PaperResult:
     # и виноваты условия, которых мы не видим в API.
     trades_on_untouched_ads: int = 0
     reprices: int = 0                    # пришлось искать другую ногу
+    entries_skipped_adv_limit: int = 0   # упёрлись в лимит на контрагента
 
     # ---- агрегаты ----
 
     @property
     def n(self) -> int:
         return len(self.trades)
+
+    def profit_by_advertiser(self) -> dict[str, Decimal]:
+        out: dict[str, Decimal] = {}
+        for t in self.trades:
+            if t.sell_adv:
+                out[t.sell_adv] = out.get(t.sell_adv, Decimal(0)) + t.pnl_kzt
+        return out
+
+    def concentration_hhi(self) -> float | None:
+        """Индекс Херфиндаля по прибыли на контрагента, 0..1.
+
+        1.0 — вся прибыль от одного человека. Замерено без лимита: двое
+        давали 69%, и такой результат описывает не рынок, а двоих людей.
+        Показатель нужен на видном месте, чтобы перекос замечался сразу,
+        а не всплывал через месяц при разборе.
+        """
+        pos = {k: float(v) for k, v in self.profit_by_advertiser().items() if v > 0}
+        tot = sum(pos.values())
+        if tot <= 0:
+            return None
+        return round(sum((v / tot) ** 2 for v in pos.values()), 4)
+
+    def top_share(self, k: int = 1) -> float | None:
+        pos = sorted((float(v) for v in self.profit_by_advertiser().values() if v > 0),
+                     reverse=True)
+        tot = sum(pos)
+        if tot <= 0:
+            return None
+        return round(100 * sum(pos[:k]) / tot, 1)
+
+    def daily_return_pct(self) -> Decimal | None:
+        if self.hours <= 0 or self.start_capital_kzt <= 0:
+            return None
+        return self.return_pct(self.start_capital_kzt) / Decimal(str(self.hours / 24))
+
+    def implausible(self, cfg: PaperConfig = PAPER) -> bool:
+        """Правдоподобен ли результат для розничного валютного рынка.
+
+        Это не исправление расчёта, а пометка. Когда симуляция даёт
+        десятки процентов в сутки, вероятнее ошибка модели, чем найденная
+        неэффективность, и относиться к числу нужно соответственно.
+        """
+        d = self.daily_return_pct()
+        return d is not None and d > cfg.plausible_daily_return_pct
 
     @property
     def filled(self) -> list[PaperTrade]:
@@ -263,6 +310,8 @@ def simulate(store: Store, host: str, cfg: PaperConfig = PAPER,
     me = MyProfile(completed_orders_30d=cfg.my_orders_30d,
                    completion_rate_30d=cfg.my_rate_30d)
     black = Blacklist(min_appearances=cfg.blacklist_after)
+    adv_trades: dict[str, int] = {}       # сделок с контрагентом
+    adv_volume: dict[str, Decimal] = {}   # объём через контрагента
     # Отбор участия детерминирован сидом: пересчёт даёт тот же результат.
     rng = _random.Random(cfg.participation_seed)
 
@@ -270,8 +319,25 @@ def simulate(store: Store, host: str, cfg: PaperConfig = PAPER,
         base = capital if cfg.compound else cfg.capital_kzt
         return base * cfg.deploy_pct / 100
 
+    def adv_has_room(ad: Ad, amount: Decimal) -> bool:
+        """Не исчерпан ли лимит на этого контрагента.
+
+        Без него симулятор девять раз подряд забирает у одного и того же
+        по невыгодной ему цене, а тот не реагирует. Это не рынок.
+        """
+        k = ad.advertiser.key
+        if cfg.max_trades_per_advertiser and \
+                adv_trades.get(k, 0) >= cfg.max_trades_per_advertiser:
+            return False
+        if cfg.max_volume_per_advertiser_kzt and \
+                adv_volume.get(k, Decimal(0)) + amount > cfg.max_volume_per_advertiser_kzt:
+            return False
+        return True
+
     def has_room(ad: Ad, amount: Decimal) -> bool:
         if tradable is not None and ad.ad_id not in tradable:
+            return False
+        if not adv_has_room(ad, amount):
             return False
         return ad.liquidity_kzt - consumed.get(ad.ad_id, Decimal(0)) >= amount
 
@@ -307,6 +373,10 @@ def simulate(store: Store, host: str, cfg: PaperConfig = PAPER,
         available = [a for a in book if has_room(a, amount)]
         if len(available) < len(book):
             res.entries_skipped_exhausted += 1
+        # Отдельно, ради диагностики: скольких отсёк именно лимит на
+        # контрагента, а не исчерпанная ликвидность объявления.
+        if any(not adv_has_room(a, amount) for a in book):
+            res.entries_skipped_adv_limit += 1
         screened = [a for a in available
                     if screen_ad(a, t, median.get(a.side, Decimal(0)))]
         if len(screened) < len(available):
@@ -341,7 +411,9 @@ def simulate(store: Store, host: str, cfg: PaperConfig = PAPER,
                 sell_price_expected=pair.sell_ad.price, sell_price_actual=None,
                 usdt=Decimal(0), pnl_kzt=Decimal(0),
                 outcome="buy_leg_vanished",
-                buy_ad_id=pair.buy_ad.ad_id, sell_ad_id=pair.sell_ad.ad_id))
+                buy_ad_id=pair.buy_ad.ad_id, sell_ad_id=pair.sell_ad.ad_id,
+                buy_adv=pair.buy_ad.advertiser.key,
+                sell_adv=pair.sell_ad.advertiser.key))
             continue
 
         usdt = amount / buy_still.price
@@ -391,15 +463,21 @@ def simulate(store: Store, host: str, cfg: PaperConfig = PAPER,
                     sell_price_expected=pair.sell_ad.price,
                     sell_price_actual=None, usdt=usdt, pnl_kzt=Decimal(0),
                     outcome="stuck",
-                    buy_ad_id=pair.buy_ad.ad_id, sell_ad_id=pair.sell_ad.ad_id))
+                    buy_ad_id=pair.buy_ad.ad_id, sell_ad_id=pair.sell_ad.ad_id,
+                buy_adv=pair.buy_ad.advertiser.key,
+                sell_adv=pair.sell_ad.advertiser.key))
                 busy_until = settle_at
                 continue
 
         pnl = usdt * sell_price - amount
 
-        # Наши сделки съедают обе ноги.
+        # Наши сделки съедают обе ноги и расходуют лимит контрагентов.
         for ad_id in (pair.buy_ad.ad_id, pair.sell_ad.ad_id):
             consumed[ad_id] = consumed.get(ad_id, Decimal(0)) + amount
+        for a in (pair.buy_ad, pair.sell_ad):
+            k = a.advertiser.key
+            adv_trades[k] = adv_trades.get(k, 0) + 1
+            adv_volume[k] = adv_volume.get(k, Decimal(0)) + amount
 
         # Достоверность: двигался ли счётчик исполнения у этих объявлений?
         if (_real_volume_moved(store, pair.buy_ad.ad_id) == 0
@@ -412,7 +490,9 @@ def simulate(store: Store, host: str, cfg: PaperConfig = PAPER,
             amount_kzt=amount, buy_price=buy_still.price,
             sell_price_expected=pair.sell_ad.price, sell_price_actual=sell_price,
             usdt=usdt, pnl_kzt=pnl, outcome=outcome,
-            buy_ad_id=pair.buy_ad.ad_id, sell_ad_id=pair.sell_ad.ad_id))
+            buy_ad_id=pair.buy_ad.ad_id, sell_ad_id=pair.sell_ad.ad_id,
+            buy_adv=pair.buy_ad.advertiser.key,
+            sell_adv=pair.sell_ad.advertiser.key))
         busy_until = settle_at
 
     res.final_capital_kzt = capital
