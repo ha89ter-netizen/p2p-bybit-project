@@ -307,6 +307,25 @@ def ledgers() -> dict:
     return out
 
 
+def _risk_grid_for(x) -> dict:
+    """Результат как функция от неизмеримого, а не одно число."""
+    import statistics as _st
+    from analysis.economics import breakeven_completion, risk_grid
+    if not x.trades or x.hours <= 0:
+        return {}
+    avg = Decimal(str(_st.fmean([float(t.pnl_kzt) for t in x.trades])))
+    ring = Decimal(str(int(PAPER.capital_kzt * PAPER.deploy_pct / 100)))
+    tpd = Decimal(str(x.n / (x.hours / 24)))
+    g = risk_grid(avg, ring, tpd, PAPER.capital_kzt)
+    g["breakeven"] = [
+        {"recovery": float(r),
+         "p": (None if breakeven_completion(avg, ring, r) is None
+               else round(float(breakeven_completion(avg, ring, r)) * 100, 2))}
+        for r in (Decimal("0"), Decimal("0.5"), Decimal("0.85"))
+    ]
+    return g
+
+
 def _research(realistic) -> dict:
     """Слой Capital Lab: сегменты, распределение, портфели.
 
@@ -413,6 +432,7 @@ def _compute_ledgers() -> dict:
             "daily_pct": (None if x.daily_return_pct() is None
                           else round(float(x.daily_return_pct()), 2)),
             "implausible": x.implausible(),
+            "risk_grid": _risk_grid_for(x),
             "plausible_limit": float(PAPER.plausible_daily_return_pct),
             "adv_limit_hits": x.entries_skipped_adv_limit,
             "max_per_adv": PAPER.max_trades_per_advertiser,

@@ -97,6 +97,12 @@
       </div>
 
       <div class="card">
+        <h2>Результат при разных допущениях о риске</h2>
+        <div class="body" style="overflow-x:auto"><div id="riskgrid"></div></div>
+        <div class="note" id="risknote"></div>
+      </div>
+
+      <div class="card">
         <h2>Распределение капитала</h2>
         <div class="body"><div id="alloc"></div>
           <div style="overflow-x:auto;margin-top:10px"><table id="allocev"></table></div>
@@ -319,8 +325,8 @@ function renderLedgers(L) {
       </div>
       ${x.implausible ? `<div style="margin-top:8px;border:1px solid var(--bad);
          color:var(--bad);padding:5px 8px;font-size:11px">
-         ⚠ ${x.daily_pct}%/сут — выше потолка правдоподобия ${x.plausible_limit}%.
-         Вероятнее ошибка модели, чем найденная неэффективность.</div>` : ""}
+         ⚠ ${x.daily_pct}%/сут при допущении, что сделка не срывается НИКОГДА.
+         Выше потолка правдоподобия ${x.plausible_limit}% — см. сетку ниже.</div>` : ""}
     </div>`;
   box.innerHTML = `<div style="display:flex;gap:10px;flex-wrap:wrap">
       ${card(L.realistic, true)}${card(L.ceiling, false)}</div>`;
@@ -350,6 +356,30 @@ function renderLedgers(L) {
       ]));
   }
   renderEquity(L);
+  renderRisk(L.realistic.risk_grid);
+}
+
+function renderRisk(g) {
+  const box = $("riskgrid");
+  if (!box) return;
+  if (!g || !g.rows || !g.rows.length) { box.innerHTML = '<span class="dim">нет сделок</span>'; return; }
+  let h = `<table><thead><tr><th>возврат при срыве</th>` +
+    g.probs.map(p => `<th class="r">${(p * 100).toFixed(p === 0.995 ? 1 : 0)}%</th>`).join("") +
+    `</tr></thead><tbody>`;
+  g.rows.forEach(r => {
+    h += `<tr><td>${(r.recovery * 100).toFixed(0)}%</td>` +
+      r.cells.map(c => `<td class="r ${c.positive ? "ok" : "bad"}">${c.daily_pct.toFixed(2)}</td>`).join("") +
+      `</tr>`;
+  });
+  h += "</tbody></table>";
+  box.innerHTML = h;
+  $("risknote").innerHTML =
+    `Суточная доходность, % от капитала, при разной вероятности успешного круга (столбцы)
+     и разной доле возврата при срыве (строки). <b>Столбец 100% — это допущение, что
+     сделка не срывается никогда</b>; именно его система показывала как результат.
+     Безубыточность требует успешности ` +
+    g.breakeven.map(b => `<b>${b.p}%</b> при возврате ${(b.recovery * 100).toFixed(0)}%`).join(", ") +
+    `. Эти вероятности в API не наблюдаемы и измеряются только реальными сделками.`;
 }
 
 function renderEquity(L) {

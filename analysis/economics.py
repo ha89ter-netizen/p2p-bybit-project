@@ -98,3 +98,76 @@ def required_spread_pct(amount_kzt: Decimal, p_completion: Decimal,
         return Decimal("Infinity")
     required_net = (1 - p_completion) * loss_if_stuck_kzt / p_completion
     return (required_net / amount_kzt) * 100
+
+
+# --------------------------------------------------------------------------
+# Результат как функция от НЕИЗМЕРИМОГО
+#
+# Вероятность того, что перевод дойдёт, и вероятность блокировки счёта в
+# API не наблюдаемы ни в каком виде. До сих пор они молча подставлялись
+# единицей и нулём — то есть модель считала, что риска нет. Отсюда и
+# бралось «4.7% в сутки»: это не найденная неэффективность, а цена
+# предположения, что сделка не срывается никогда.
+#
+# Измерить их можно только реальными сделками. Но перестать выдавать одно
+# число вместо диапазона можно прямо сейчас: ниже результат считается на
+# сетке допущений, и читатель видит, при каких из них он положителен.
+# --------------------------------------------------------------------------
+
+#: вероятности успешного завершения круга, для которых строится сетка
+COMPLETION_GRID: tuple[Decimal, ...] = (
+    Decimal("0.90"), Decimal("0.95"), Decimal("0.98"),
+    Decimal("0.99"), Decimal("0.995"), Decimal("1.00"),
+)
+
+#: доля возврата при сорванном круге: полная потеря, половина, почти всё
+RECOVERY_GRID: tuple[Decimal, ...] = (
+    Decimal("0"), Decimal("0.5"), Decimal("0.85"),
+)
+
+
+def expected_pnl_per_trade(net_kzt: Decimal, ring_kzt: Decimal,
+                           p_complete: Decimal, recovery: Decimal) -> Decimal:
+    """Матожидание одной сделки при заданных допущениях.
+
+    При срыве теряется не «упущенная прибыль», а непокрытая часть тела:
+    деньги уже ушли, актив не получен или не продан.
+    """
+    loss = ring_kzt * (Decimal(1) - recovery)
+    return p_complete * net_kzt - (Decimal(1) - p_complete) * loss
+
+
+def risk_grid(avg_net_kzt: Decimal, ring_kzt: Decimal, trades_per_day: Decimal,
+              capital_kzt: Decimal,
+              probs: tuple[Decimal, ...] = COMPLETION_GRID,
+              recoveries: tuple[Decimal, ...] = RECOVERY_GRID) -> dict:
+    """Суточная доходность на сетке (вероятность успеха × доля возврата).
+
+    Возвращает проценты от капитала в сутки. Ячейка с p=1 — это то самое
+    число, которое система показывала как результат: верхний угол сетки,
+    а не её середина.
+    """
+    if capital_kzt <= 0:
+        return {"rows": [], "capital_kzt": 0}
+    rows = []
+    for r in recoveries:
+        cells = []
+        for p in probs:
+            e = expected_pnl_per_trade(avg_net_kzt, ring_kzt, p, r)
+            daily = e * trades_per_day / capital_kzt * 100
+            cells.append({"p": float(p), "daily_pct": round(float(daily), 3),
+                          "positive": daily > 0})
+        rows.append({"recovery": float(r), "cells": cells})
+    return {"rows": rows, "probs": [float(p) for p in probs],
+            "capital_kzt": float(capital_kzt),
+            "trades_per_day": float(trades_per_day),
+            "ring_kzt": float(ring_kzt)}
+
+
+def breakeven_completion(avg_net_kzt: Decimal, ring_kzt: Decimal,
+                         recovery: Decimal) -> Decimal | None:
+    """Вероятность успеха, при которой матожидание обнуляется."""
+    loss = ring_kzt * (Decimal(1) - recovery)
+    if avg_net_kzt <= 0 or loss <= 0:
+        return None
+    return loss / (avg_net_kzt + loss)
