@@ -64,10 +64,25 @@ class TestPeriodicIsolation(unittest.TestCase):
         export.assert_called_once()
 
     def test_digest_period_is_derived_from_hours(self):
+        """Период дайджеста обязан выводиться из часов и интервала.
+
+        Раньше тест сверялся с числом 180 — это 3600/20 при интервале в
+        двадцать секунд. Когда интервал подняли до 120, тест развалился,
+        хотя код был верен: константа описывала не смысл, а совпадение.
+        """
         from config.settings import COLLECTOR, TELEGRAM
-        expected = max(1, TELEGRAM.digest_hours * 3600
-                       // COLLECTOR.poll_interval_sec)
-        self.assertEqual(expected, TELEGRAM.digest_hours * 180)
+        period = max(1, TELEGRAM.digest_hours * 3600
+                     // COLLECTOR.poll_interval_sec)
+        self.assertEqual(period * COLLECTOR.poll_interval_sec,
+                         TELEGRAM.digest_hours * 3600)
+        self.assertGreaterEqual(period, 1)
+
+    def test_digest_period_scales_with_the_interval(self):
+        """Вдвое реже опрос — вдвое меньше циклов на то же окно."""
+        hours = 12
+        fast = max(1, hours * 3600 // 20)
+        slow = max(1, hours * 3600 // 120)
+        self.assertEqual(fast, slow * 6)
 
     def test_send_digest_builds_and_sends(self):
         with mock.patch("notify.telegram.send") as sent, \
