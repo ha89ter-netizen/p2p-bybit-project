@@ -7,3 +7,6 @@ __pycache__/
 *.pyc
 smoke.log
 run.log
+dashboard.log
+*.part
+*.tmp
