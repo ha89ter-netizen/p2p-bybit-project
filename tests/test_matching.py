@@ -138,3 +138,35 @@ class TestPairSearch(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestThresholdsAgreeWithTheInterval(unittest.TestCase):
+    """Пороги времени обязаны согласовываться с частотой опроса.
+
+    При подъёме интервала с 20 до 120 с порог свежести в 90 с стал меньше
+    интервала: между двумя обходами вся книга считалась бы протухшей.
+    Конфликт был тихим, потому что фильтр сейчас не вызывается — первый
+    же вызов с `now` отфильтровал бы всё до нуля.
+    """
+
+    def test_freshness_exceeds_the_poll_interval(self):
+        from config.settings import COLLECTOR, MATCHING
+        self.assertGreater(MATCHING.max_data_age_sec, COLLECTOR.poll_interval_sec,
+                           "порог свежести не может быть меньше интервала опроса")
+
+    def test_freshness_leaves_room_for_a_missed_cycle(self):
+        """Один пропущенный обход не должен обнулять книгу."""
+        from config.settings import COLLECTOR, MATCHING
+        self.assertGreaterEqual(MATCHING.max_data_age_sec,
+                                COLLECTOR.poll_interval_sec * 2)
+
+    def test_filter_drops_stale_ads_when_now_is_given(self):
+        from analysis.matching import eligible
+        from config.settings import MATCHING
+        from tests.fixtures import make_ad
+        ad = make_ad(ad_id="A", side="1")          # observed_at = 1000.0
+        fresh = eligible([ad], Decimal("300000"), "1", now=1000.0)
+        stale = eligible([ad], Decimal("300000"), "1",
+                         now=1000.0 + MATCHING.max_data_age_sec + 1)
+        self.assertEqual(len(fresh), 1)
+        self.assertEqual(len(stale), 0)
