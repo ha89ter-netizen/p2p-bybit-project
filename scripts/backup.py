@@ -24,7 +24,7 @@ import time
 from pathlib import Path
 
 DEFAULT_DIR = Path(os.path.expanduser(
-    os.getenv("P2P_BACKUP_DIR", "~/Documents/p2p_backups")))
+    os.getenv("P2P_BACKUP_DIR", "~/p2p_backups")))
 
 # Offsite. Вторая папка на том же диске спасает от удаления каталога, но не
 # от смерти SSD и не от потери ноутбука — а именно так теряются данные
