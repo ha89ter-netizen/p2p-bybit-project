@@ -108,6 +108,7 @@ class PaperResult:
     trades_on_untouched_ads: int = 0
     reprices: int = 0                    # пришлось искать другую ногу
     entries_skipped_adv_limit: int = 0   # упёрлись в лимит на контрагента
+    entries_skipped_thin_adv: int = 0    # прокрутили бы больше реального оборота
 
     # ---- агрегаты ----
 
@@ -275,6 +276,34 @@ def _last_volume_move(store: Store) -> dict[str, float]:
     return out
 
 
+
+def _real_volume_by_advertiser(store: Store) -> dict[str, Decimal]:
+    """Сколько ТЕНГЕ реально прошло через каждого контрагента.
+
+    Считается из движения executedQuantity по всем его объявлениям —
+    это счётчик самой биржи, а не наше предположение.
+
+    Зачем. Лимит на число сделок не отвечает на вопрос, много ли для
+    ЭТОГО человека три круга по 300 000. Замерено на живых данных: для
+    большинства контрагентов наш симулированный оборот составлял 3-20%
+    их настоящего, но у двоих из тридцати четырёх — 141% и 224%.
+    Прокрутить через человека больше, чем он наторговал за всё время
+    наблюдения, физически нельзя; такие сделки — фантом.
+    """
+    out: dict[str, Decimal] = {}
+    for r in store.conn.execute(
+            "SELECT a.advertiser_key k,"
+            "       SUM((mx - mn) * px) v FROM ("
+            "  SELECT s.ad_id,"
+            "         MAX(CAST(s.executed_qty AS REAL)) mx,"
+            "         MIN(CAST(s.executed_qty AS REAL)) mn,"
+            "         AVG(CAST(s.price AS REAL)) px"
+            "  FROM ad_state s GROUP BY s.ad_id"
+            ") t JOIN ad a ON a.ad_id = t.ad_id"
+            " GROUP BY a.advertiser_key"):
+        out[r["k"]] = Decimal(str(r["v"] or 0))
+    return out
+
 def _market_median(book: list[Ad]) -> dict[str, Decimal]:
     """Медианная цена по каждой стороне — базa для отсева выбросов."""
     out: dict[str, Decimal] = {}
@@ -312,6 +341,8 @@ def simulate(store: Store, host: str, cfg: PaperConfig = PAPER,
     black = Blacklist(min_appearances=cfg.blacklist_after)
     adv_trades: dict[str, int] = {}       # сделок с контрагентом
     adv_volume: dict[str, Decimal] = {}   # объём через контрагента
+    real_volume = (_real_volume_by_advertiser(store)
+                   if cfg.max_share_of_real_volume else {})
     # Отбор участия детерминирован сидом: пересчёт даёт тот же результат.
     rng = _random.Random(cfg.participation_seed)
 
@@ -332,6 +363,13 @@ def simulate(store: Store, host: str, cfg: PaperConfig = PAPER,
         if cfg.max_volume_per_advertiser_kzt and \
                 adv_volume.get(k, Decimal(0)) + amount > cfg.max_volume_per_advertiser_kzt:
             return False
+        # Нельзя провести через человека больше, чем он реально наторговал.
+        # Замерено: у двоих контрагентов из 34 симуляция прокручивала 141%
+        # и 224% их настоящего оборота — это фантомные сделки.
+        if cfg.max_share_of_real_volume:
+            cap = real_volume.get(k, Decimal(0)) * cfg.max_share_of_real_volume
+            if adv_volume.get(k, Decimal(0)) + amount > cap:
+                return False
         return True
 
     def has_room(ad: Ad, amount: Decimal) -> bool:

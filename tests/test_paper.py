@@ -25,7 +25,13 @@ CFG = PaperConfig(deploy_pct=Decimal("30"), capital_kzt=Decimal("1000000"),
                   screen_requirements=False, screen_conflicts=False,
                   recent_volume_sec=0, max_release_sec=0,
                   max_price_deviation_pct=Decimal("1000"),
-                  blacklist_after=10**9, compound=False)
+                  blacklist_after=10**9, compound=False,
+                  # Синтетические книги не двигают executedQuantity, поэтому
+                  # сверка с реальным оборотом здесь отключена: она
+                  # проверяется отдельно, в test_real_volume_cap.
+                  max_share_of_real_volume=Decimal(0),
+                  max_trades_per_advertiser=0,
+                  max_volume_per_advertiser_kzt=Decimal(0))
 
 
 class PaperCase(unittest.TestCase):
