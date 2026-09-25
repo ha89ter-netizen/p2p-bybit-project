@@ -43,7 +43,7 @@ from analysis.matching import iter_pairs_by_spread
 from analysis.replay import book_at, observation_times
 from analysis.screening import (Blacklist, MyProfile, blocking_reasons,
                                 pair_conflicts, price_outlier)
-from config.settings import PAPER, PaperConfig, QualityStratum
+from config.settings import MATCHING, PAPER, PaperConfig, QualityStratum
 from domain.models import Ad, Pair
 from storage.db import Store
 
@@ -476,12 +476,30 @@ def simulate(store: Store, host: str, cfg: PaperConfig = PAPER,
         # выбросу по цене или из чёрного списка. Такая асимметрия завышает
         # результат бесплатно.
         settle_median = _market_median(settle_book)
+        # Покупатель на выходе обязан платить по рельсу, счёт в котором у
+        # нас есть. На входе это проверял матчер (no_payment_we_hold), на
+        # выходе проверки не было: симулятор продавал тем, кто платит
+        # наличным депозитом или через чужой банк. Биды там систематически
+        # выше — замерено +2.34% у наличного депозита против −3.6..−5% у
+        # банков, — и «проскальзывание» шло только в нашу пользу.
+        def pays_us(a: Ad) -> bool:
+            ours = MATCHING.my_payments
+            return not ours or bool(set(a.payments) & ours)
+
+        # Лимиты на контрагента обязаны действовать и на выходе. Раньше
+        # has_room проверялся только при входе: лучшие покупатели исчерпывали
+        # лимит, на входе их не брали, выбирали покупателя похуже — а через
+        # десять минут симулятор всё равно продавал исчерпанному лучшему.
+        # Лимит обходился с чёрного хода. Замерено: из 40 проскальзываний
+        # 30 вверх и одно вниз, +51 940 ₸ — 17.6% всего бумажного дохода.
         alts = [a for a in settle_book
                 if a.side == "0" and a.supports(amount)
-                and _quality_ok(a, cfg)
+                and _quality_ok(a, cfg) and pays_us(a)
+                and has_room(a, amount)
                 and screen_ad(a, settle_at, settle_median.get(a.side, Decimal(0)))]
         if sell_still is not None and sell_still.supports(amount) \
-                and _quality_ok(sell_still, cfg) and sell_still not in alts:
+                and _quality_ok(sell_still, cfg) and pays_us(sell_still) \
+                and sell_still not in alts:
             alts.append(sell_still)
 
         if alts:

@@ -271,3 +271,37 @@ class TestSettleSymmetry(unittest.TestCase):
         """Смена ноги должна быть видна в диагностике, а не молча."""
         from analysis.paper import PaperResult
         self.assertIn("reprices", PaperResult.__dataclass_fields__)
+
+
+class TestSettleRailCheck(unittest.TestCase):
+    """На выходе покупатель обязан платить по нашему рельсу.
+
+    Без этой проверки симулятор продавал тем, кто платит наличным депозитом
+    или через банк, где у нас нет счёта. Биды там выше, и проскальзывание
+    на реальных данных шло только в нашу пользу — ни одного случая в минус.
+    """
+
+    def test_settle_branch_checks_our_payment_rails(self):
+        import inspect
+        from analysis import paper
+        src = inspect.getsource(paper.simulate)
+        settle = src[src.index("settle_book = book_at"):]
+        self.assertIn("pays_us(a)", settle)
+        self.assertIn("pays_us(sell_still)", settle)
+        self.assertIn("MATCHING.my_payments", settle)
+
+
+class TestLimitsHoldAtSettle(unittest.TestCase):
+    """Лимиты на контрагента не должны обходиться на выходе.
+
+    has_room проверялся только при входе. Исчерпанный лучший покупатель
+    отсекался при выборе пары, но через десять минут симулятор продавал
+    ему же. Итог — проскальзывание только вверх: 30 случаев против одного.
+    """
+
+    def test_settle_alternatives_respect_limits(self):
+        import inspect
+        from analysis import paper
+        src = inspect.getsource(paper.simulate)
+        settle = src[src.index("settle_book = book_at"):]
+        self.assertIn("has_room(a, amount)", settle)
