@@ -90,7 +90,7 @@
         <h2>Бумажный баланс — два журнала</h2>
         <div class="body">
           <div id="ledgers"></div>
-          <svg class="spark" id="eq" viewBox="0 0 600 110" preserveAspectRatio="none" style="margin-top:12px"></svg>
+          <svg class="spark" id="eq" viewBox="0 0 600 150" preserveAspectRatio="xMidYMid meet" style="margin-top:12px"></svg>
           <div style="overflow-x:auto;margin-top:10px"><table id="trades"></table></div>
         </div>
         <div class="note" id="lednote"></div>
@@ -384,21 +384,41 @@ function renderRisk(g) {
 
 function renderEquity(L) {
   const svg = $("eq");
-  const series = [["#4fbfa8", L.realistic.equity], ["#5aa7c9", L.ceiling.equity]];
-  const all = series.flatMap(([, e]) => e.map(p => p.cap));
-  if (all.length < 2) { svg.innerHTML = ""; return; }
+  const R = L.realistic.equity, C = L.ceiling.equity;
+  if (!R || R.length < 2) { svg.innerHTML = ""; return; }
+  const start = L.realistic.start || 1000000;
+  const all = R.concat(C).map(p => p.cap).concat([start]);
   let lo = Math.min(...all), hi = Math.max(...all);
-  const pad = (hi - lo) * .1 || 1; lo -= pad; hi += pad;
+  const pad = (hi - lo) * .08 || 1; lo -= pad; hi += pad;
+  const t0 = Math.min(R[0].t, C[0].t), t1 = Math.max(R[R.length-1].t, C[C.length-1].t);
+  const W = 600, H = 150, L0 = 70, B = 132, T = 10;
+  const X = t => L0 + (t - t0) / (t1 - t0 || 1) * (W - L0 - 6);
+  const Y = v => B - (v - lo) / (hi - lo) * (B - T);
+  const path = e => e.map((p, i) => (i ? "L" : "M") + X(p.t).toFixed(1) + " " + Y(p.cap).toFixed(1)).join(" ");
   let out = "";
-  series.forEach(([col, e]) => {
-    if (e.length < 2) return;
-    const X = i => (i / (e.length - 1)) * 600;
-    const Y = v => 105 - ((v - lo) / (hi - lo)) * 100;
-    out += `<path d="${e.map((p, i) => (i ? "L" : "M") + X(i).toFixed(1) + " " + Y(p.cap).toFixed(1)).join(" ")}"
-            fill="none" stroke="${col}" stroke-width="1.6"/>`;
-  });
-  out += `<text x="4" y="12" fill="#5d7176" font-size="10" font-family="ui-monospace,monospace">${Math.round(hi).toLocaleString("ru")} ₸</text>`;
-  out += `<text x="4" y="105" fill="#5d7176" font-size="10" font-family="ui-monospace,monospace">${Math.round(lo).toLocaleString("ru")} ₸</text>`;
+  // сетка: 4 уровня
+  for (let k = 0; k <= 4; k++) {
+    const v = lo + (hi - lo) * k / 4, y = Y(v);
+    out += `<line x1="${L0}" y1="${y.toFixed(1)}" x2="${W}" y2="${y.toFixed(1)}" stroke="#263438" stroke-width="1"/>`;
+    out += `<text x="${L0-6}" y="${(y+3).toFixed(1)}" fill="#5d7176" font-size="9.5" text-anchor="end" font-family="ui-monospace,monospace">${Math.round(v/1000).toLocaleString("ru")}к</text>`;
+  }
+  // линия старта
+  out += `<line x1="${L0}" y1="${Y(start).toFixed(1)}" x2="${W}" y2="${Y(start).toFixed(1)}" stroke="#5d7176" stroke-dasharray="3 3"/>`;
+  // площадь под реалистичным журналом
+  out += `<path d="${path(R)} L${X(R[R.length-1].t).toFixed(1)} ${B} L${X(R[0].t).toFixed(1)} ${B} Z" fill="#4fbfa8" opacity=".10"/>`;
+  out += `<path d="${path(C)}" fill="none" stroke="#5aa7c9" stroke-width="1.3" stroke-dasharray="4 3"/>`;
+  out += `<path d="${path(R)}" fill="none" stroke="#4fbfa8" stroke-width="2"/>`;
+  // конечная точка
+  const e = R[R.length-1];
+  out += `<circle cx="${X(e.t).toFixed(1)}" cy="${Y(e.cap).toFixed(1)}" r="3.5" fill="#4fbfa8"/>`;
+  // даты по оси X
+  const fmtD = t => new Date(t*1000).toLocaleDateString("ru-RU",{day:"2-digit",month:"2-digit"});
+  for (let k = 0; k <= 4; k++) {
+    const t = t0 + (t1 - t0) * k / 4;
+    out += `<text x="${X(t).toFixed(1)}" y="${H-2}" fill="#5d7176" font-size="9.5" text-anchor="middle" font-family="ui-monospace,monospace">${fmtD(t)}</text>`;
+  }
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.style.height = "auto";
   svg.innerHTML = out;
 }
 
@@ -554,24 +574,46 @@ function renderPolls(h) {
     ]));
 }
 
+// Каждая секция рисуется сама, как только её данные готовы: сервер
+// считает их в фоне в разном темпе, и пока одна считается, остальные
+// должны быть видны. Ошибка в одной секции не валит всю страницу.
+function safe(name, fn) {
+  try { fn(); } catch (e) { console.warn(name, e); }
+}
+
+let inflight = false;
 async function tick() {
+  if (inflight) return;            // не копим запросы, пока старый не вернулся
+  inflight = true;
   try {
     const r = await fetch("/api/state", {cache: "no-store"});
     const d = await r.json();
     if (d.error) throw new Error(d.error);
-    $("amt").textContent = `круг ${d.health.amount.toLocaleString("ru")} ₸ · только наблюдение, сделки не совершаются`;
-    renderAlerts(d.health, d.backups);
-    renderStrip(d.health);
-    renderTop(d.live); renderBandsNow(d.live);
-    renderBandsWin(d.window); renderSpark(d.window);
-    renderBackups(d.backups); renderPolls(d.health);
-    renderLedgers(d.ledgers);
-    renderResearch(d.ledgers && d.ledgers.research, d.ledgers);
-    $("updated").textContent = "обновлено " + new Date().toLocaleTimeString("ru-RU");
-    $("foot").textContent = `книга на ${hhmm(d.live.at)} · buy ${d.live.buy} / sell ${d.live.sell} заявок · `
-      + `лучший бид ${d.live.best_sell ?? "—"} / аск ${d.live.best_buy ?? "—"} ₸`;
+    const h = d.health, l = d.live, w = d.window, b = d.backups;
+    if (h) {
+      $("amt").textContent = `круг ${h.amount.toLocaleString("ru")} ₸ · только наблюдение, сделки не совершаются`;
+      safe("strip", () => renderStrip(h));
+      safe("polls", () => renderPolls(h));
+      if (b) safe("alerts", () => renderAlerts(h, b));
+    }
+    if (l) {
+      safe("top", () => renderTop(l));
+      safe("bandsnow", () => renderBandsNow(l));
+      $("foot").textContent = `книга на ${hhmm(l.at)} · buy ${l.buy} / sell ${l.sell} заявок · `
+        + `лучший бид ${l.best_sell ?? "—"} / аск ${l.best_buy ?? "—"} ₸`;
+    }
+    if (w) { safe("bandswin", () => renderBandsWin(w)); safe("spark", () => renderSpark(w)); }
+    else { $("violnote").innerHTML = '<span class="dim">окно 12 ч считается…</span>'; }
+    if (b) safe("backups", () => renderBackups(b));
+    safe("ledgers", () => renderLedgers(d.ledgers));
+    safe("research", () => renderResearch(d.ledgers && d.ledgers.research, d.ledgers));
+    const pending = ["health","live","window","backups"].filter(k => !d[k]);
+    $("updated").innerHTML = "обновлено " + new Date().toLocaleTimeString("ru-RU")
+      + (pending.length ? ` <span class="dim">· считается: ${pending.join(", ")}</span>` : "");
   } catch (e) {
     $("updated").innerHTML = `<span class="bad">ошибка: ${e.message}</span>`;
+  } finally {
+    inflight = false;
   }
 }
 tick();

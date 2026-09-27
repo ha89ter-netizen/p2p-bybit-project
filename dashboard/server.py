@@ -409,7 +409,15 @@ def _compute_ledgers() -> dict:
         store.close()
 
     def pack(x, label):
-        eq = [{"t": e.at, "cap": float(e.capital_kzt)} for e in x.equity[-240:]]
+        # Вся история, прореженная равномерно. Раньше брался хвост из 240
+        # точек — это последние несколько часов, когда сделок не было, и
+        # график показывал две плоские линии вместо роста с 1 000 000.
+        full = x.equity
+        step = max(1, len(full) // 300)
+        pts = full[::step]
+        if full and pts[-1] is not full[-1]:
+            pts = pts + [full[-1]]
+        eq = [{"t": e.at, "cap": float(e.capital_kzt)} for e in pts]
         return {
             "label": label,
             "trades": x.n,
@@ -455,6 +463,54 @@ def _compute_ledgers() -> dict:
     }
 
 
+# --------------------------------------------------------------------------
+# Быстрая часть тоже считается в фоне.
+#
+# Раньше health/live/window считались на каждый запрос. Пока база была
+# маленькой, это занимало секунду. На 176 МБ и 250 тыс. состояний window()
+# (80 моментов книги) стал идти минутами; страница спрашивает данные раз в
+# 20 секунд, запросы копились, душили друг друга, процесс ел 480% CPU, и
+# ни один ответ не доходил до браузера. Теперь запрос только отдаёт
+# готовый снимок и ничего не считает.
+# --------------------------------------------------------------------------
+_FAST: dict = {"health": None, "live": None, "window": None, "backups": None,
+               "at": {}, "took": {}, "error": None}
+_FAST_PLAN = (("health", health, 20.0), ("live", live, 30.0),
+              ("backups", backups, 300.0), ("window", window, 600.0))
+
+
+def _fast_worker():
+    last: dict = {}
+    while True:
+        now = time.time()
+        for name, fn, every in _FAST_PLAN:
+            if now - last.get(name, 0) < every:
+                continue
+            t0 = time.time()
+            try:
+                _FAST[name] = fn()
+                _FAST["error"] = None
+            except Exception as exc:                    # noqa: BLE001
+                _FAST["error"] = f"{name}: {type(exc).__name__}: {exc}"
+            _FAST["took"][name] = round(time.time() - t0, 1)
+            _FAST["at"][name] = time.time()
+            last[name] = time.time()
+        time.sleep(2)
+
+
+def snapshot() -> dict:
+    """Готовый снимок. Мгновенно; ничего не считает."""
+    now = time.time()
+    return {
+        "health": _FAST["health"], "live": _FAST["live"],
+        "window": _FAST["window"], "backups": _FAST["backups"],
+        "ledgers": ledgers(), "now": now,
+        "fast_age": {k: round(now - v) for k, v in _FAST["at"].items()},
+        "fast_took": dict(_FAST["took"]),
+        "fast_error": _FAST["error"],
+    }
+
+
 class Handler(BaseHTTPRequestHandler):
     def _send(self, code, body: bytes, ctype: str):
         self.send_response(code)
@@ -471,9 +527,7 @@ class Handler(BaseHTTPRequestHandler):
                 html = (ROOT / "index.html").read_bytes()
                 return self._send(200, html, "text/html; charset=utf-8")
             if path == "/api/state":
-                data = {"health": health(), "live": live(),
-                        "window": window(), "backups": backups(),
-                        "ledgers": ledgers(), "now": time.time()}
+                data = snapshot()
                 return self._send(200, json.dumps(data, ensure_ascii=False).encode(),
                                   "application/json; charset=utf-8")
             self._send(404, b"not found", "text/plain; charset=utf-8")
@@ -491,6 +545,7 @@ def main() -> int:
     if "--port" in sys.argv:
         port = int(sys.argv[sys.argv.index("--port") + 1])
     # 127.0.0.1, а не 0.0.0.0: снаружи машины сокет не существует.
+    threading.Thread(target=_fast_worker, daemon=True).start()
     threading.Thread(target=_ledger_worker, daemon=True).start()
     srv = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     print(f"панель: http://127.0.0.1:{port}   (Ctrl+C — остановить)")
