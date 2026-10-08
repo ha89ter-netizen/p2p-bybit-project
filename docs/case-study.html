@@ -1,0 +1,1210 @@
+<title>Неэффективность или премия за риск</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,600;0,700;1,400&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --ground:      #eff2f3;
+    --surface:     #ffffff;
+    --surface-alt: #e6ebec;
+    --ink:         #10171a;
+    --ink-soft:    #3f4e53;
+    --ink-mute:    #6c7c81;
+    --rule:        #ccd5d7;
+    --rule-soft:   #dee5e6;
+    --accent:      #0d5a54;
+    --accent-soft: #d3e5e2;
+    --warn:        #8f4310;
+    --warn-soft:   #f0dfd0;
+    --shadow:      0 1px 2px rgba(16,23,26,.06), 0 8px 24px -16px rgba(16,23,26,.35);
+
+    --display: "Spectral", "Iowan Old Style", Georgia, serif;
+    --body:    "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --mono:    "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:      #0c1113;
+      --surface:     #141b1d;
+      --surface-alt: #1b2426;
+      --ink:         #e4ebec;
+      --ink-soft:    #b0bec1;
+      --ink-mute:    #7d8f93;
+      --rule:        #2a3639;
+      --rule-soft:   #212c2e;
+      --accent:      #56b8ac;
+      --accent-soft: #17332f;
+      --warn:        #cf8241;
+      --warn-soft:   #35251a;
+      --shadow:      0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.9);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground:      #0c1113;
+    --surface:     #141b1d;
+    --surface-alt: #1b2426;
+    --ink:         #e4ebec;
+    --ink-soft:    #b0bec1;
+    --ink-mute:    #7d8f93;
+    --rule:        #2a3639;
+    --rule-soft:   #212c2e;
+    --accent:      #56b8ac;
+    --accent-soft: #17332f;
+    --warn:        #cf8241;
+    --warn-soft:   #35251a;
+    --shadow:      0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.9);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--body);
+    font-size: 16px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page { max-width: 860px; margin: 0 auto; padding: 0 24px 96px; }
+
+  .masthead { padding: 56px 0 36px; border-bottom: 2px solid var(--ink); }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    letter-spacing: .13em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 20px;
+  }
+
+  h1 {
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: clamp(34px, 6vw, 54px);
+    line-height: 1.08;
+    letter-spacing: -.02em;
+    text-wrap: balance;
+    margin: 0 0 18px;
+  }
+
+  .standfirst {
+    font-family: var(--display);
+    font-size: clamp(17px, 2.4vw, 20px);
+    line-height: 1.5;
+    color: var(--ink-soft);
+    max-width: 60ch;
+    margin: 0 0 32px;
+  }
+
+  .meta {
+    display: flex; flex-wrap: wrap; gap: 8px 28px;
+    font-family: var(--mono); font-size: 12.5px; color: var(--ink-mute);
+  }
+  .meta b { color: var(--ink-soft); font-weight: 500; }
+  .meta a { color: var(--accent); text-underline-offset: 3px; }
+
+  section { padding-top: 52px; }
+
+  h2 {
+    font-family: var(--display);
+    font-size: 27px; font-weight: 600;
+    letter-spacing: -.01em; text-wrap: balance;
+    margin: 0 0 6px;
+  }
+
+  h3.sub {
+    font-family: var(--body);
+    font-size: 16px; font-weight: 600;
+    margin: 28px 0 8px;
+  }
+
+  .sec-label {
+    font-family: var(--mono);
+    font-size: 11px; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--ink-mute); margin: 0 0 10px;
+  }
+
+  p { max-width: 66ch; margin: 0 0 16px; }
+  p.lede { font-size: 17.5px; color: var(--ink-soft); }
+
+  strong { font-weight: 600; }
+  em { font-style: italic; }
+
+  code {
+    font-family: var(--mono); font-size: .875em;
+    background: var(--surface-alt); padding: .12em .38em; border-radius: 3px;
+  }
+
+  a { color: var(--accent); }
+
+  ul { max-width: 66ch; padding-left: 0; list-style: none; margin: 0 0 16px; }
+  ul li { position: relative; padding-left: 22px; margin-bottom: 11px; }
+  ul li::before {
+    content: ""; position: absolute; left: 2px; top: .62em;
+    width: 7px; height: 1.5px; background: var(--accent);
+  }
+
+  .finding {
+    margin-top: 30px;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    box-shadow: var(--shadow);
+    padding: 28px 26px 22px;
+  }
+  .finding .chart-wrap { overflow-x: auto; }
+  .finding svg { display: block; min-width: 600px; width: 100%; height: auto; }
+
+  .chart-note {
+    font-size: 13.5px; color: var(--ink-mute);
+    border-top: 1px solid var(--rule-soft);
+    margin: 18px 0 0; padding-top: 14px; max-width: none;
+  }
+
+  .legend {
+    display: flex; flex-wrap: wrap; gap: 6px 22px;
+    font-family: var(--mono); font-size: 11.5px; color: var(--ink-mute);
+    margin: 0 0 4px;
+  }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .legend i { width: 14px; height: 3px; display: inline-block; }
+
+  .verdict {
+    margin-top: 26px;
+    border-left: 3px solid var(--warn);
+    background: var(--warn-soft);
+    padding: 18px 22px;
+  }
+  .verdict p { margin: 0; max-width: 62ch; }
+  .verdict .tag {
+    display: block; font-family: var(--mono); font-size: 11px;
+    letter-spacing: .12em; text-transform: uppercase;
+    color: var(--warn); margin-bottom: 7px;
+  }
+
+  .table-wrap { overflow-x: auto; margin: 22px 0 6px; }
+  table {
+    width: 100%; border-collapse: collapse;
+    font-size: 14.5px; font-variant-numeric: tabular-nums;
+  }
+  th, td { text-align: left; padding: 9px 14px 9px 0; border-bottom: 1px solid var(--rule-soft); }
+  th {
+    font-family: var(--mono); font-size: 11px; letter-spacing: .09em;
+    text-transform: uppercase; color: var(--ink-mute); font-weight: 400;
+    border-bottom: 1px solid var(--rule); white-space: nowrap;
+  }
+  td.num, th.num { text-align: right; font-family: var(--mono); padding-right: 0; }
+  td.num { font-size: 13.5px; }
+  tr:last-child td { border-bottom: none; }
+  .pos { color: var(--accent); }
+  .neg { color: var(--warn); }
+  td .sub { display: block; font-size: 12px; color: var(--ink-mute); font-family: var(--body); }
+
+  .stats {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 1px; background: var(--rule-soft); border: 1px solid var(--rule-soft);
+    margin: 26px 0 8px;
+  }
+  .stat { background: var(--ground); padding: 16px 18px; }
+  .stat .v {
+    font-family: var(--mono); font-size: 21px; font-weight: 500;
+    letter-spacing: -.02em; display: block; margin-bottom: 3px;
+  }
+  .stat .k { font-size: 12.5px; color: var(--ink-mute); line-height: 1.35; display: block; }
+
+  .callout {
+    border: 1px solid var(--rule); border-left: 3px solid var(--accent);
+    background: var(--surface); padding: 18px 22px; margin: 24px 0;
+  }
+  .callout p:last-child { margin-bottom: 0; }
+  .callout .tag {
+    display: block; font-family: var(--mono); font-size: 11px;
+    letter-spacing: .12em; text-transform: uppercase;
+    color: var(--accent); margin-bottom: 7px;
+  }
+
+  pre {
+    font-family: var(--mono); font-size: 13px; line-height: 1.55;
+    background: var(--surface-alt); border: 1px solid var(--rule-soft);
+    padding: 15px 18px; overflow-x: auto; margin: 20px 0;
+  }
+  pre code { background: none; padding: 0; font-size: inherit; }
+
+  .pipeline { counter-reset: step; margin: 24px 0 8px; }
+  .pipeline .step {
+    counter-increment: step; display: grid; grid-template-columns: 38px 1fr;
+    gap: 16px; padding: 15px 0; border-top: 1px solid var(--rule-soft); align-items: start;
+  }
+  .pipeline .step:last-child { border-bottom: 1px solid var(--rule-soft); }
+  .pipeline .step::before {
+    content: counter(step, decimal-leading-zero);
+    font-family: var(--mono); font-size: 12px; color: var(--accent); padding-top: 3px;
+  }
+  .pipeline h3 { font-family: var(--body); font-size: 15px; font-weight: 600; margin: 0 0 3px; }
+  .pipeline p { margin: 0; font-size: 14.5px; color: var(--ink-soft); max-width: 62ch; }
+
+  footer {
+    margin-top: 64px; padding-top: 22px; border-top: 1px solid var(--rule);
+    font-size: 13.5px; color: var(--ink-mute);
+  }
+  footer p { max-width: 66ch; }
+
+  @media (max-width: 560px) {
+    .page { padding: 0 18px 72px; }
+    section { padding-top: 42px; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+  @media print {
+    body { background: #fff; }
+    .finding { box-shadow: none; break-inside: avoid; }
+    section { break-inside: avoid-page; }
+  }
+</style>
+
+<div class="page">
+
+  <header class="masthead">
+    <p class="eyebrow">Микроструктура рынка · Распределение капитала · 2026</p>
+    <h1>Неэффективность или премия за риск</h1>
+    <p class="standfirst">
+      Тридцатидневный подтверждающий прогон по заранее замороженному протоколу:
+      1.8 млн исполнимых пар, покрытие 71%. Типичная пара убыточна, видимые
+      «возможности» — хвост распределения. Но при торговле только с надёжными
+      контрагентами и налоге с разницы схема может давать доход — при условии,
+      которое бумажная торговля в принципе не измеряет: доле сорванных сделок.
+    </p>
+    <div class="meta">
+      <span><b>Данные:</b> книга заявок Bybit, KZT/USDT</span>
+      <span><b>Окно:</b> 07.09 – 07.10.2026, прогон засчитан</span>
+      <span><b>Инструмент:</b> Python, без зависимостей, 303 теста</span>
+      <span><b>Код:</b> <a href="https://github.com/ha89ter-netizen/p2p-bybit-project">p2p-bybit-project</a></span>
+    </div>
+  </header>
+
+  <section>
+    <p class="sec-label">Итог подтверждающего прогона</p>
+    <h2>Может ли схема приносить доход</h2>
+
+    <div class="callout">
+      <span class="tag">Вывод работы</span>
+      <p>
+        <strong>Схема может приносить доход</strong> при торговле только с надёжными
+        контрагентами (сегмент good), налоге с разницы и условии, что успешно проходит
+        не меньше 80–92% кругов. Бумажный результат за 30 дней — <strong>+329 991 ₸</strong>
+        на капитал 1 млн до учёта срывов.
+      </p>
+      <p style="margin-top:12px">
+        Две оговорки являются частью вывода, а не сноской.
+        <strong>Порог успешности — условие, а не факт:</strong> бумажная торговля показывает,
+        сколько можно заработать, если сделки проходят, но не как часто они проходят —
+        это единственная величина, которую она в принципе не может измерить.
+        <strong>Площадка — вопрос лицензии,</strong> отдельный от налога: весь спред
+        наблюдается на глобальном контуре, в лицензированном за месяц не возникло
+        ни одной исполнимой пары.
+      </p>
+    </div>
+
+    <div class="stats">
+      <div class="stat"><span class="v">71.0%</span><span class="k">покрытие времени<br>порог валидности 60%</span></div>
+      <div class="stat"><span class="v">1.8 млн</span><span class="k">исполнимых пар<br>полный перебор</span></div>
+      <div class="stat"><span class="v">−2.2…−2.9%</span><span class="k">медиана спреда пары<br>во всех полосах</span></div>
+      <div class="stat"><span class="v">80–92%</span><span class="k">нужная доля успешных<br>кругов</span></div>
+    </div>
+
+    <h3 class="sub">Что показал рынок</h3>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Полоса</th><th class="num">Медиана всех пар</th><th class="num">95% ДИ</th><th class="num">Лучшая пара, мед.</th><th class="num">Доля пар &gt; 0</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>any\basic</code></td>    <td class="num neg">−2.88%</td><td class="num">[−3.09; −2.63]</td><td class="num pos">+4.18%</td><td class="num">23%</td></tr>
+          <tr><td><code>basic\good</code></td>   <td class="num neg">−2.54%</td><td class="num">[−2.69; −2.38]</td><td class="num pos">+4.07%</td><td class="num">26%</td></tr>
+          <tr><td><code>good\premium</code></td> <td class="num neg">−2.21%</td><td class="num">[−2.35; −2.06]</td><td class="num pos">+3.85%</td><td class="num">27%</td></tr>
+          <tr><td><code>premium</code></td>       <td class="num neg">−2.85%</td><td class="num">[−3.60; −1.87]</td><td class="num neg">−1.02%</td><td class="num">22%</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="chart-note" style="border:none;padding-top:10px">
+      Круг 300 000 ₸, 954 момента с шагом 30 минут, интервалы — блочный бутстрап по суткам.
+      Методика 1.0.0 и 1.1.0 дают медианы −2.76% и −2.55%: выводы от версии не зависят.
+    </p>
+
+    <ul>
+      <li><strong>Гипотеза о монотонном убывании спреда с качеством не подтвердилась</strong>
+        ни основной переменной, ни вторичной. Порядок полос нарушен в 785 из 953 моментов.</li>
+      <li><strong>Типичная исполнимая пара убыточна.</strong> Доход дают редкие пары из
+        хвоста распределения — их отбор и есть работа стратегии.</li>
+      <li><strong>Хвост следует за размером книги:</strong> лучший спред ночью около 4%,
+        днём около 11%, медиана — −2…−3% круглые сутки.</li>
+      <li><strong>У premium лучший спред отрицателен</strong> при кругах до 300 000 ₸;
+        на 500k и 1M становится слабо положительным.</li>
+      <li><strong>Признак премии за риск</strong> — отрицательная связь спреда с качеством
+        продающей ноги (t ≈ −1.9, p ≈ 0.06) — пограничный и требует отдельной проверки.</li>
+    </ul>
+
+    <h3 class="sub">Порог безубыточности</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Возврат при срыве</th><th class="num">без заморозки</th><th class="num">неделя заморозки</th><th class="num">месяц</th></tr></thead>
+        <tbody>
+          <tr><td>0%</td> <td class="num">98.7%</td><td class="num">99.0%</td><td class="num">99.4%</td></tr>
+          <tr><td>50%</td><td class="num">97.4%</td><td class="num">98.3%</td><td class="num">99.2%</td></tr>
+          <tr><td>85%</td><td class="num">92.0%</td><td class="num">96.9%</td><td class="num">99.0%</td></tr>
+          <tr><td>95%</td><td class="num">79.2%</td><td class="num">95.9%</td><td class="num">98.9%</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="margin-top:18px">
+      Доля успешных кругов, при которой бумажный результат обращается в ноль.
+      При быстром разблоке и почти полном возврате порог около 80%, при неделе
+      заморозки — около 96%. Реальную долю срывов можно установить только опытом;
+      она и решает, существует ли доход.
+    </p>
+    <p>
+      Полный отчёт с регрессией, разбивкой по часам и номиналам —
+      <a href="https://github.com/ha89ter-netizen/p2p-bybit-project/blob/main/reports/final_2026-10-07.md">reports/final_2026-10-07.md</a>.
+    </p>
+  </section>
+
+  <section>
+    <p class="sec-label">Постановка</p>
+    <h2>Почему видимый арбитраж не исчезает</h2>
+    <p class="lede">
+      Условие отсутствия арбитража требует, чтобы возможность купить актив дешевле,
+      чем его же можно немедленно продать, была вычерпана конкуренцией. На P2P-площадке
+      Bybit разрыв между лучшим бидом и лучшим аском по паре USDT/KZT составляет
+      несколько процентов и держится сутками, на виду у всех участников.
+    </p>
+    <p>
+      Возможных объяснений два, и они ведут к противоположным решениям.
+      <strong>Первое — предел арбитража:</strong> возможность реальна, но капитал,
+      способный её закрыть, ограничен операционными трениями. <strong>Второе — премия
+      за риск:</strong> возможности нет, а разрыв есть цена риска, который берёт на себя
+      тот, кто в сделку входит. Расчёт по этому рынку не мгновенный и не гарантированный:
+      деньги уходят межбанковским переводом, актив разблокируется вручную второй стороной.
+    </p>
+    <p>
+      По величине спреда эти гипотезы неразличимы — обе предсказывают положительное
+      число. Нужна предсказание, по которому они расходятся.
+    </p>
+  </section>
+
+  <section>
+    <p class="sec-label">Идентификация</p>
+    <h2>Разделяющее предсказание</h2>
+    <p>
+      Ключ — <strong>поперечная вариация по качеству контрагента</strong>. Площадка публикует
+      для каждого участника оборот за 30 дней и долю успешно завершённых сделок. Это
+      наблюдаемый прокси вероятности расчёта.
+    </p>
+
+    <div class="callout">
+      <span class="tag">Гипотезы расходятся здесь</span>
+      <p>
+        Если спред — <strong>неэффективность</strong>, его величина не должна систематически
+        зависеть от надёжности контрагента: деньги на дороге лежат одинаково для всех.
+      </p>
+      <p style="margin-top:12px">
+        Если спред — <strong>премия за риск</strong>, он обязан монотонно убывать с ростом
+        надёжности и в пределе обращаться в ноль: у контрагента, который не подводит,
+        премию платить не за что.
+      </p>
+    </div>
+
+    <p>
+      Выборка разбита на четыре вложенные страты по трём порогам одновременно: оборот
+      контрагента, доля успешных сделок, зрелость самой заявки. Внутри каждой страты
+      измеряется спред лучшей <em>исполнимой</em> пары — с учётом лимитов заявки, доступных
+      платёжных рельсов и совместимости условий, а не просто верха книги.
+    </p>
+  </section>
+
+  <section>
+    <p class="sec-label">Основной результат</p>
+    <h2>Монотонность не выживает; отличается только верхняя полоса</h2>
+
+    <p class="lede">
+      Разведочный прогон показывал ровное убывание спреда по стратам. Это убывание
+      оказалось артефактом метрики: страты вложены, а мерился максимум внутри страты,
+      поэтому порядок был гарантирован конструкцией. На взаимоисключающих полосах
+      картина другая.
+    </p>
+
+    <div class="finding">
+      <div class="legend">
+        <span><i style="background:var(--accent)"></i> лучшая исполнимая пара, медиана</span>
+        <span><i style="background:var(--warn)"></i> все исполнимые пары, медиана</span>
+      </div>
+      <div class="chart-wrap">
+        <svg viewBox="0 0 720 312" role="img" aria-label="Спред по взаимоисключающим полосам качества: медиана лучшей пары минус 1.03, плюс 1.90, плюс 1.55, минус 2.84 процента; медиана всех пар минус 3.15, минус 2.24, минус 2.04, минус 2.95 процента">
+          <g font-family="IBM Plex Mono, monospace" font-size="11" fill="var(--ink-mute)" text-anchor="end">
+            <text x="80" y="34">+3%</text>
+            <text x="80" y="65.4">+2%</text>
+            <text x="80" y="96.9">+1%</text>
+            <text x="80" y="128.3">0</text>
+            <text x="80" y="159.7">−1%</text>
+            <text x="80" y="191.1">−2%</text>
+            <text x="80" y="222.6">−3%</text>
+            <text x="80" y="254">−4%</text>
+          </g>
+
+          <g stroke="var(--rule-soft)" stroke-width="1">
+            <line x1="90" y1="30"    x2="690" y2="30"/>
+            <line x1="90" y1="61.4"  x2="690" y2="61.4"/>
+            <line x1="90" y1="92.9"  x2="690" y2="92.9"/>
+            <line x1="90" y1="155.7" x2="690" y2="155.7"/>
+            <line x1="90" y1="187.1" x2="690" y2="187.1"/>
+            <line x1="90" y1="218.6" x2="690" y2="218.6"/>
+            <line x1="90" y1="250"   x2="690" y2="250"/>
+          </g>
+          <line x1="90" y1="124.3" x2="690" y2="124.3" stroke="var(--ink)" stroke-width="1.5"/>
+
+          <!-- лучшая пара -->
+          <g fill="var(--accent)">
+            <rect x="116" y="124.3" width="46" height="32.3"/>
+            <rect x="266" y="64.6"  width="46" height="59.7"/>
+            <rect x="416" y="75.6"  width="46" height="48.7"/>
+            <rect x="566" y="124.3" width="46" height="89.2"/>
+          </g>
+          <!-- все пары -->
+          <g fill="var(--warn)" opacity=".72">
+            <rect x="168" y="124.3" width="46" height="99.0"/>
+            <rect x="318" y="124.3" width="46" height="70.4"/>
+            <rect x="468" y="124.3" width="46" height="64.1"/>
+            <rect x="618" y="124.3" width="46" height="92.7"/>
+          </g>
+
+          <g font-family="IBM Plex Mono, monospace" font-size="11" font-weight="500" text-anchor="middle">
+            <g fill="var(--accent)">
+              <text x="139" y="170">−1.03</text>
+              <text x="289" y="58">+1.90</text>
+              <text x="439" y="69">+1.55</text>
+              <text x="589" y="227">−2.84</text>
+            </g>
+            <g fill="var(--warn)">
+              <text x="191" y="237">−3.15</text>
+              <text x="341" y="208">−2.24</text>
+              <text x="491" y="202">−2.04</text>
+              <text x="641" y="231">−2.95</text>
+            </g>
+          </g>
+
+          <g text-anchor="middle">
+            <g font-family="IBM Plex Sans, sans-serif" font-size="13" font-weight="600" fill="var(--ink)">
+              <text x="165" y="274">any\basic</text>
+              <text x="315" y="274">basic\good</text>
+              <text x="465" y="274">good\premium</text>
+              <text x="615" y="274">premium</text>
+            </g>
+            <g font-family="IBM Plex Mono, monospace" font-size="10" fill="var(--ink-mute)">
+              <text x="165" y="291">284 лица · 417 диад</text>
+              <text x="315" y="291">218 лиц · 615 диад</text>
+              <text x="465" y="291">136 лиц · 1072 диады</text>
+              <text x="615" y="291">30 лиц · 26 диад</text>
+            </g>
+          </g>
+        </svg>
+      </div>
+      <p class="chart-note">
+        Взаимоисключающие полосы: каждая содержит тех, кто прошёл свой порог и
+        <em>не прошёл</em> следующий. Круг 300 000 ₸, 179 моментов наблюдения за
+        19.5 ч. Полоса <code>premium</code> — 30 контрагентов и 26 диад, ниже
+        порога 30 кластеров, поэтому читается только как описательная.
+      </p>
+    </div>
+
+    <div class="verdict">
+      <span class="tag">Заявленная монотонность не подтверждается</span>
+      <p>
+        Порядок полос <strong>нарушается в 152 моментах наблюдения из 179 — в 85%</strong>.
+        На вложенных стратах он не мог быть нарушен ни разу: максимум по надмножеству
+        не бывает меньше максимума по подмножеству. Ровное убывание разведочного
+        прогона было свойством метрики, а не рынка.
+      </p>
+      <p style="margin-top:12px">
+        По основной переменной — медиане <em>всех</em> исполнимых пар — монотонности
+        тоже нет: −3.15%, −2.24%, −2.04%, −2.95%. Величина сначала растёт, затем падает.
+      </p>
+    </div>
+
+    <h3 class="sub">Что после этого остаётся</h3>
+    <p>
+      Одно наблюдение переживает смену метрики. <strong>Полоса <code>premium</code> —
+      единственная, где отрицателен даже максимум:</strong> −2.84% по лучшей паре и
+      −2.95% по всем парам. Механикой это не объясняется: подмножество вполне могло бы
+      содержать выгодную пару, но не содержит ни одной.
+    </p>
+    <p>
+      Правдоподобное объяснение структурное: самые надёжные участники котируют обе
+      стороны книги и удерживают собственную маржу, поэтому круг «купить у одного,
+      продать другому» внутри этой полосы убыточен по построению. Проверить это
+      объяснение имеющимися данными нельзя — оно остаётся гипотезой.
+    </p>
+    <p>
+      Утверждение, которое работа поддерживает на сегодня, узкое:
+      <em>среди наиболее репутабельных контрагентов исполнимого положительного спреда
+      не наблюдается.</em> Более широкое утверждение о плавной премии за качество
+      данными не поддержано.
+    </p>
+
+    <div class="callout">
+      <span class="tag">Статус измерения</span>
+      <p>
+        Числа этого раздела получены на разведочной выборке и первых сутках
+        подтверждающего прогона. Подтверждающее окно закрыто 07.10.2026; итоговые
+        числа по всему окну — в разделе «Итог подтверждающего прогона» в начале
+        документа. Протокол анализа был заморожен заранее и опубликован вместе с кодом.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <p class="sec-label">Разведочный прогон</p>
+    <h2>Что показывал август и почему это не результат</h2>
+    <p>
+      Первый прогон, 29.08–03.09.2026, 115.5 ч наблюдений, давал ровную лестницу:
+      <code>any +2.80%</code>, <code>basic +2.49%</code>, <code>good +1.27%</code>,
+      <code>premium −3.63%</code>. Именно она выглядела главным результатом.
+    </p>
+    <p>
+      Пороги качества там вложены — <code>premium ⊂ good ⊂ basic ⊂ any</code> — а
+      мерился максимум спреда внутри страты. Максимум по надмножеству не может быть
+      меньше максимума по подмножеству, поэтому такая таблица убывает при
+      <strong>любых</strong> данных. Проверка на живых наблюдениях: на вложенных
+      стратах порядок не нарушился ни разу из 32 моментов, на взаимоисключающих
+      полосах — в 85% моментов.
+    </p>
+    <p>
+      Пересчитать август на полосах невозможно: сырые наблюдения того прогона утрачены
+      03.09.2026, резервного копирования не существовало. Поэтому августовские числа
+      сохранены здесь как разведочные и источник гипотезы — и ни в каком виде не
+      используются как проверенный результат.
+    </p>
+  </section>
+
+  <section>
+    <p class="sec-label">Ключевая метрика</p>
+    <h2>Вменённая вероятность расчёта</h2>
+    <p>
+      Прогнозировать прибыль по этому рынку методологически нельзя: вероятность того,
+      что перевод дойдёт, и вероятность блокировки счёта не наблюдаемы. Поэтому задача
+      инвертируется — <strong>вместо прогноза выводится вменённая величина</strong>, ровно как
+      подразумеваемая волатильность выводится из цены опциона, а вероятность дефолта —
+      из кредитного спреда.
+    </p>
+
+    <pre><code>E[круг] = p · net − (1 − p) · loss  =  0
+                    ⇓
+              p* = loss / (net + loss)
+
+p*  — вероятность успешного расчёта, при которой сделка
+      перестаёт быть убыточной</code></pre>
+
+    <p>
+      Величина <code>p*</code> определена только тогда, когда круг вообще прибылен:
+      при <code>net ≤ 0</code> безубыточность недостижима ни при какой вероятности.
+      Это делает её условной величиной, и таблица ниже приводит долю моментов,
+      в которых она вообще существует.
+    </p>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Полоса качества</th>
+            <th class="num">Спред лучшей пары</th>
+            <th class="num">Медиана p*</th>
+            <th class="num">Моментов с определённой p*</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td><code>any\basic</code></td>      <td class="num neg">−1.03%</td><td class="num">96.24%</td><td class="num">64 из 164 · 39%</td></tr>
+          <tr><td><code>basic\good</code></td>     <td class="num pos">+1.90%</td><td class="num">97.64%</td><td class="num">133 из 179 · 74%</td></tr>
+          <tr><td><code>good\premium</code></td>   <td class="num pos">+1.55%</td><td class="num">97.99%</td><td class="num">130 из 179 · 73%</td></tr>
+          <tr><td><code>premium</code></td>        <td class="num neg">−2.84%</td><td class="num">99.28%</td><td class="num">11 из 95 · 12%</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="verdict">
+      <span class="tag">Осторожно: отбор</span>
+      <p>
+        Медианы <code>p*</code> растут слева направо, но <strong>сравнивать их между
+        полосами нельзя</strong>. Каждая медиана взята по своей подвыборке — по тем
+        моментам, где круг оказался прибыльным, — а доля таких моментов различается
+        втрое: 74% в <code>basic\good</code> против 12% в <code>premium</code>.
+        Ровный рост здесь может быть следствием отбора, а не свойством рынка.
+      </p>
+      <p style="margin-top:12px">
+        Содержательно читается другое: <strong>в полосе <code>premium</code> круг
+        прибылен лишь в 12% моментов, и даже тогда требует надёжности расчёта
+        выше 99%.</strong> Это утверждение внутри одной полосы, отбором не искажённое.
+      </p>
+    </div>
+
+    <h3 class="sub">Чем задана величина потерь</h3>
+    <p>
+      Приведённые пороги посчитаны при <code>loss</code>, равном полному номиналу круга —
+      то есть в предположении, что застрявшие 300 000 ₸ теряются целиком. Это
+      <strong>верхняя граница стресс-случая, а не реалистичный сценарий:</strong> реально
+      потери складываются из невозвращённого тела, стоимости закрытия позиции и
+      издержки замороженного капитала, а часть средств обычно возвращается.
+    </p>
+    <p>
+      Заморозенный протокол требует публиковать вместо одного числа таблицу
+      чувствительности по доле возврата и длительности заморозки. На момент
+      публикации она не построена — это известный пробел, а не умолчание.
+      Все приведённые <code>p*</code> следует читать как консервативную верхнюю оценку.
+    </p>
+    <p>
+      Само по себе <code>p*</code> остаётся вменённым порогом, а не оценкой реальной
+      вероятности. Опубликованная доля успешных сделок контрагента описывает его
+      статистику со всеми остальными участниками и вероятностью успеха конкретной
+      сделки не является.
+    </p>
+  </section>
+
+  <section>
+    <p class="sec-label">Микроструктура</p>
+    <h2>Котируемая ликвидность против исполнимой</h2>
+    <p>
+      Верх книги систематически завышает то, что можно реально исполнить. Три эффекта
+      действуют в одну сторону и все три измеримы.
+    </p>
+
+    <h3 class="sub">Глубина котируется валовая, а не доступная</h3>
+    <p>
+      Поле объёма в заявке содержит исходный размер, а не остаток. Доступно
+      <code>lastQuantity = quantity − executedQuantity − frozenQuantity</code>.
+      В живой книге у 10 заявок из 12 эти величины расходятся; крайний наблюдённый
+      случай — котируемые 131 203 USDT при реальном остатке 2 480, то есть
+      <strong>завышение доступной глубины в 53 раза</strong>. Расчёт ликвидности по
+      котируемому полю даёт систематически смещённую оценку ёмкости рынка.
+    </p>
+
+    <h3 class="sub">Лучшая котировка недостижима к моменту исполнения</h3>
+    <p>
+      Расчёт по обеим ногам делает человек через банковское приложение: 1–2 минуты на
+      ногу. За это время верх книги обновляется. В сегменте надёжных контрагентов
+      95% лучших заявок за время наблюдения были исполнены кем-то другим — то есть
+      наблюдаемый спред и достижимый спред это разные величины, а разница между ними
+      есть издержка реализации.
+    </p>
+
+    <h3 class="sub">Платёжные рельсы ограничивают множество пар</h3>
+    <p>
+      Пара исполнима, только если обе стороны принимают банк, счёт в котором реально
+      есть. В справочнике площадки 751 платёжный метод; на казахстанском рынке
+      доминируют три. Ограничение множества пар этими тремя рельсами отсекает
+      лишь 4–8% пар — то есть концентрация платёжной инфраструктуры здесь очень
+      высока, и это само по себе фактор структуры рынка.
+    </p>
+  </section>
+
+  <section>
+    <p class="sec-label">Сторона предложения</p>
+    <h2>Экономика маркет-мейкера</h2>
+    <p>
+      Если тейкеру платят премию за риск, естественный вопрос — зарабатывает ли
+      противоположная сторона. Мейкер котирует обе стороны и живёт не со спреда,
+      а с <strong>оборота при спреде</strong>. Замер на живом рынке за 2.4 часа:
+    </p>
+
+    <div class="stats">
+      <div class="stat"><span class="v">92</span><span class="k">двусторонних мейкера из 391 участника</span></div>
+      <div class="stat"><span class="v">5.22%</span><span class="k">медианный котируемый спред</span></div>
+      <div class="stat"><span class="v">32%</span><span class="k">из них не исполнили ничего</span></div>
+      <div class="stat"><span class="v">39%</span><span class="k">оборота у пяти участников</span></div>
+    </div>
+
+    <p style="margin-top:26px">
+      Распределение котируемых спредов широкое — межквартильный размах от 2.20% до
+      11.25%. При этом пятёрка лидеров по обороту котирует 2.60–7.14%, то есть
+      <strong>не самые узкие спреды</strong>. Победитель здесь не тот, кто котирует агрессивнее,
+      а тот, к кому идёт поток: репутация и лимиты важнее цены.
+    </p>
+    <p>
+      Обратная сторона того же факта: треть двусторонних мейкеров за окно наблюдения не
+      совершила ни одной сделки. Их котировки существуют, но выручка равна нулю.
+      Спред без потока не стоит ничего — стандартный результат теории маркет-мейкинга,
+      воспроизведённый здесь на данных розничного валютного рынка.
+    </p>
+  </section>
+
+  <section>
+    <p class="sec-label">Регулирование</p>
+    <h2>Периметр лицензирования определяет, где живёт спред</h2>
+    <p>
+      Площадка существует в двух контурах: глобальном и казахстанском, лицензированном
+      AFSA. Их микроструктура принципиально различна, и это не деталь, а главное
+      ограничение всей задачи.
+    </p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Свойство</th><th>Глобальный контур</th><th>Лицензированный контур</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Мейкеры</td><td>сотни независимых участников</td><td>один лицензированный участник</td></tr>
+          <tr><td>Роль розницы</td><td>мейкер или тейкер</td><td>только тейкер</td></tr>
+          <tr><td>Спред против тейкера</td><td class="pos">положительный в нижних стратах</td><td class="neg">−6%</td></tr>
+          <tr><td>Круг для розницы</td><td>возможен</td><td>убыточен по построению</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="margin-top:22px">
+      В лицензированном контуре единственный маркет-мейкер котирует обе стороны, а
+      розничный участник по регулированию может быть только тейкером. Круг там
+      отрицателен <em>при любом числе участников</em> — это свойство конструкции рынка,
+      а не конъюнктуры. Разрыв, который виден в данных, существует исключительно за
+      пределами лицензированного периметра.
+    </p>
+    <div class="callout">
+      <span class="tag">Вывод для практики</span>
+      <p>
+        Ограничение здесь не экономическое, а институциональное. Вопрос «выгодно ли это»
+        и вопрос «где это допустимо делать» имеют разные ответы, и второй решается
+        до первого, а не после.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <p class="sec-label">Третий артефакт</p>
+    <h2>Метрика росла вместе с числом объявлений</h2>
+    <p class="lede">
+      Тот же класс ошибки, что и с вложенными сегментами, но по другой оси.
+      Главная величина работы — спред лучшей исполнимой пары — оказалась зависимой
+      от того, сколько объявлений стоит в книге, а не от того, что происходит с ценами.
+    </p>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Объявлений в книге</th>
+            <th class="num">Лучшая пара</th>
+            <th class="num">Медиана всех пар</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>70 – 163</td>  <td class="num pos">+1.41%</td><td class="num neg">−10.20%</td></tr>
+          <tr><td>168 – 401</td> <td class="num pos">+2.70%</td><td class="num neg">−10.38%</td></tr>
+          <tr><td>412 – 440</td> <td class="num pos">+6.14%</td><td class="num neg">−9.81%</td></tr>
+          <tr><td>441 – 466</td> <td class="num pos">+6.18%</td><td class="num neg">−9.89%</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="verdict">
+      <span class="tag">Корреляция с размером книги: +0.757</span>
+      <p>
+        Медиана держится около −10% при шестикратном изменении плотности книги.
+        Рынок остаётся тем же самым. Растёт только максимум — потому что
+        <strong>в большей выборке хвост распределения длиннее.</strong> Это свойство
+        максимума как статистики, а не свойство рынка.
+      </p>
+      <p style="margin-top:12px">
+        Ночью, когда в книге 74 объявления, разрыв между лучшей покупкой и лучшей
+        продажей падает до <strong>+0.21%</strong>. Днём при 450 объявлениях он около 6%.
+        Медианные цены при этом не меняются: типичный продавец просит ~495 ₸,
+        типичный покупатель даёт ~445 ₸ и днём, и ночью.
+      </p>
+    </div>
+
+    <h3 class="sub">Сколько остаётся, если считать устойчиво</h3>
+    <p>
+      Замер повторён по квантилям вместо экстремумов: 2-й процентиль цен продажи
+      против 98-го процентиля цен покупки. Такая пара тоже смещается с ростом
+      выборки, но несравнимо слабее.
+    </p>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Объявлений</th><th class="num">Продажа, 2-й проц.</th><th class="num">Покупка, 98-й проц.</th><th class="num">Разрыв</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>70 – 131</td>  <td class="num">473.94 ₸</td><td class="num">481.00 ₸</td><td class="num pos">+1.49%</td></tr>
+          <tr><td>131 – 298</td> <td class="num">472.88 ₸</td><td class="num">485.00 ₸</td><td class="num pos">+2.56%</td></tr>
+          <tr><td>311 – 429</td> <td class="num">474.00 ₸</td><td class="num">486.10 ₸</td><td class="num pos">+2.55%</td></tr>
+          <tr><td>430 – 466</td> <td class="num">475.00 ₸</td><td class="num">490.00 ₸</td><td class="num pos">+3.16%</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p style="margin-top:22px">
+      Эффект <strong>не исчезает, но уменьшается вдвое</strong>: +3.16% вместо +6.18%.
+      И он несимметричен — сторона продажи стоит на месте (473.94 → 475.00), весь
+      прирост даёт верх стороны покупки (481.00 → 490.00). То есть в плотной книге
+      появляются покупатели, готовые платить заметно выше рынка; продавцы дешевле
+      не становятся.
+    </p>
+    <p>
+      Это меняет формулировку вывода. Не «на рынке есть разрыв в 6%», а «в плотной
+      книге верхний хвост стороны покупки дотягивается на ~3% выше, чем в разреженной,
+      при неизменной медиане». Второе утверждение проверяемо и на порядок скромнее.
+    </p>
+
+    <div class="callout">
+      <span class="tag">Что из этого следует для метода</span>
+      <p>
+        Максимум остаётся верной величиной для <em>торгового правила</em> — брать
+        лучшее из доступного. Но для <em>измерения рынка</em> он непригоден: ночная
+        и дневная книга меряются им по-разному, и сравнивать результаты нельзя.
+        Измерение переведено на квантиль; торговое правило оставлено как было.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <p class="sec-label">Расширение системы</p>
+    <h2>От сканера к лаборатории капитала</h2>
+    <p class="lede">
+      Второй вопрос работы: что происходит с капиталом, если симулированную
+      прибыль P2P систематически уводить в долгосрочный портфель. Слой построен
+      поверх существующего сборщика и не меняет ни сбор данных, ни симулятор.
+    </p>
+
+    <pre><code>книга заявок  →  исполнимая пара  →  симулированный цикл 300 000 ₸
+                                            ↓
+                              net &gt; 0 ?  событие распределения
+                                            ↓
+                          доля в портфель  ·  остаток в резерв P2P
+                                            ↓
+                              раскладка по весам модели
+                                            ↓
+                                        оценка</code></pre>
+
+    <h3 class="sub">Правила учёта</h3>
+    <ul>
+      <li>
+        <strong>Взнос делает только прибыль.</strong> Ноль и убыток взноса не дают,
+        а портфель не вскрывается для покрытия убытков P2P — это отдельный карман.
+        Убытки остаются в обороте целиком.
+      </li>
+      <li>
+        <strong>Событие идемпотентно.</strong> Идентификатор выводится из самой
+        сделки — момента решения и обеих ног, — а не из счётчика. Пересчёт истории
+        с нуля здесь обычная операция, и удваивать взносы он права не имеет.
+      </li>
+      <li>
+        <strong>Округление только вниз.</strong> Учёт не имеет права выдумать тенге:
+        сумма распределённого и оставленного никогда не превышает базу.
+      </li>
+    </ul>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Доля отчисления</th><th class="num">В портфель</th><th class="num">Оборотный капитал P2P</th><th class="num">Стоимость портфеля</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>0%</code></td>   <td class="num">0 ₸</td>      <td class="num">1 084 560 ₸</td><td class="num">0 ₸</td></tr>
+          <tr><td><code>25%</code></td>  <td class="num">21 140 ₸</td> <td class="num">1 063 420 ₸</td><td class="num">нет цен</td></tr>
+          <tr><td><code>50%</code></td>  <td class="num">42 280 ₸</td> <td class="num">1 042 280 ₸</td><td class="num">нет цен</td></tr>
+          <tr><td><code>75%</code></td>  <td class="num">63 420 ₸</td> <td class="num">1 021 140 ₸</td><td class="num">нет цен</td></tr>
+          <tr><td><code>100%</code></td> <td class="num">84 560 ₸</td> <td class="num">1 000 000 ₸</td><td class="num">нет цен</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="verdict">
+      <span class="tag">Половина ответа, и она подписана как половина</span>
+      <p>
+        Котировок акций и облигаций у системы нет и взяться им неоткуда: она собирает
+        книгу P2P и больше ничего. Поэтому стоимость портфеля и доходность
+        <strong>не вычисляются</strong>, а показываются как «нет данных» — не как ноль.
+      </p>
+      <p style="margin-top:12px">
+        Из таблицы читается ровно одно: сколько ликвидности каждая доля забирает
+        из оборота. Вернутся ли эти деньги с доходностью — вопрос цен активов,
+        а их нет. Утверждать, что 100% лучше или хуже, оснований нет.
+      </p>
+    </div>
+
+    <h3 class="sub">Потолок отчисления</h3>
+    <p>
+      У доли отчисления есть структурный предел, и он выводится из учёта, а не
+      назначается. Отчисляется <em>только положительная</em> часть результата,
+      а убытки остаются в обороте целиком. Значит оборотный капитал за период
+      меняется на
+    </p>
+    <pre><code>Δкапитал = чистый итог − доля · (положительная часть)
+
+при доле = 100%:   Δкапитал = −(сумма убытков)</code></pre>
+    <p>
+      При стопроцентном отчислении прибыль уходит вся, убытки остаются все, и
+      оборотный капитал может только падать — период за периодом, пока P2P
+      не остановится сам. Предельная доля, при которой капитал ещё не тает:
+      <code>чистый итог / положительная часть</code>.
+    </p>
+    <p>
+      В текущем окне убытков нет, поэтому предел равен 100%, а капитал при нём
+      ровно возвращается к стартовому миллиону. В предыдущем замере, где был один
+      убыток на 6 658 ₸, предел составлял <strong>93.1%</strong>, и при 100%
+      оборотка опускалась ниже старта на величину этого убытка. Это и есть
+      количественный ответ на вопрос, как доля отчисления влияет на ликвидность:
+      максимум существует и определяется убыточностью стратегии, а не вкусом.
+    </p>
+
+    <h3 class="sub">Что сделано, чтобы это не было заглушкой</h3>
+    <p>
+      Оценка отключена не отсутствием кода, а отсутствием данных.
+      <code>MarketPriceProvider</code> — интерфейс; сейчас в нём стоит реализация,
+      возвращающая <code>None</code> на любой запрос. Подключение источника котировок
+      включает стоимость, доходность и сравнение четырёх моделей весов без единой
+      правки в слое учёта.
+    </p>
+    <p>
+      Четыре модели — агрессивная, ростовая, сбалансированная, консервативная —
+      получают <em>одинаковые</em> взносы. Иначе разница между ними шла бы от разного
+      притока, а не от весов, и сравнение потеряло бы смысл.
+    </p>
+
+    <h3 class="sub">Валюты не смешиваются</h3>
+    <p>
+      Капитал P2P номинирован в тенге, активы-ориентиры — в долларах. Курс берётся
+      из середины собственной книги USDT/KZT и на момент замера равен
+      <strong>491.07 ₸/USD</strong>. Это розничный P2P-курс, а не курс Нацбанка и не
+      межбанк; он систематически от них отличается и подписан именно так. Тенге и
+      доллары нигде не складываются арифметически.
+    </p>
+  </section>
+
+  <section>
+    <p class="sec-label">Проверка гипотезы</p>
+    <h2>Связь качества и спреда на сегментном слое</h2>
+    <p>
+      Тот же вопрос, что и в основной части, но заданный отдельным аналитическим
+      слоем и на большей выборке пар. Направление связи вычисляется из чисел, а не
+      задано в коде.
+    </p>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Полоса</th><th class="num">Медиана</th><th class="num">Среднее</th>
+            <th class="num">Пар</th><th class="num">Ликвидность/момент</th>
+            <th class="num">Успех</th><th class="num">Диад</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td><code>any\basic</code></td>     <td class="num neg">−3.86%</td><td class="num neg">−3.31%</td><td class="num">7 575</td> <td class="num">1 931 млн ₸</td><td class="num">96%</td><td class="num">446</td></tr>
+          <tr><td><code>basic\good</code></td>    <td class="num neg">−2.20%</td><td class="num neg">−1.89%</td><td class="num">16 460</td><td class="num">2 130 млн ₸</td><td class="num">98%</td><td class="num">740</td></tr>
+          <tr><td><code>good\premium</code></td>  <td class="num neg">−2.05%</td><td class="num neg">−1.93%</td><td class="num">25 026</td><td class="num">1 522 млн ₸</td><td class="num">99%</td><td class="num">826</td></tr>
+          <tr><td><code>premium</code></td>       <td class="num neg">−3.55%</td><td class="num neg">−3.39%</td><td class="num">153</td>   <td class="num">320 млн ₸</td>  <td class="num">99%</td><td class="num">17 ⚠</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="verdict">
+      <span class="tag">Направление: не монотонно</span>
+      <p>
+        Медиана спреда по всем исполнимым парам сначала растёт, затем падает.
+        Гипотеза о плавном убывании спреда с ростом качества контрагента
+        <strong>этими данными не поддерживается</strong> — и система сообщает об этом
+        сама, потому что направление вычисляется, а не объявляется.
+      </p>
+      <p style="margin-top:12px">
+        Сегмент <code>good</code> помечен как текущий рабочий, а не как лучший:
+        статистического подтверждения превосходства нет. В полосе
+        <code>premium</code> 17 независимых диад — ниже порога 30, поэтому она
+        читается только как описательная.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <p class="sec-label">Режим работы</p>
+    <h2>Что означает «бумажный» в этой системе</h2>
+    <p>
+      Рыночные данные настоящие: книга заявок, цены, остатки, репутация
+      контрагентов — всё снято с живого рынка. Настоящих сделок нет ни одной.
+    </p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Величина</th><th>Источник</th><th>Статус</th></tr></thead>
+        <tbody>
+          <tr><td>Цены, остатки, репутация</td><td>живая книга Bybit</td><td class="pos">реальные данные</td></tr>
+          <tr><td>Результат цикла</td><td>симуляция по записанной истории</td><td>бумажный</td></tr>
+          <tr><td>Взносы в портфель</td><td>доля симулированной прибыли</td><td>бумажные</td></tr>
+          <tr><td>Стоимость портфеля</td><td>—</td><td class="neg">нет источника цен</td></tr>
+          <tr><td>Курс ₸/USD</td><td>середина книги P2P USDT/KZT</td><td>прокси, не официальный</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="margin-top:22px">
+      Пакета исполнения в кодовой базе <strong>не существует</strong> — не выключен
+      флагом, а физически отсутствует. Система неспособна отправить заявку, потому
+      что соответствующего кода нет. Слова «прибыль», «заработано», «доход» в
+      интерфейсе не используются: только «симулированный» и «бумажный».
+    </p>
+    <p>
+      Отдельная строка о добросовестности измерения. За время работы найдены и
+      исправлены семь собственных дефектов модели: тавтологическое убывание на
+      вложенных сегментах; тихая потеря дробных требований контрагента;
+      суммирование ликвидности вместо усреднения; слепая продажа в переставленное
+      объявление при 128 доступных альтернативах; зависимость главной метрики от
+      числа объявлений в книге; «прокрутка» через контрагента больше его реального
+      оборота (141% и 224%); и обход лимита на контрагента при выходе из круга,
+      давший 17.6% бумажного дохода. <strong>Все семь завышали картину</strong> —
+      и все описаны здесь, а не удалены из истории.
+    </p>
+    <p>
+      Каждый из них был найден проверкой числа, которое выглядело слишком хорошо.
+      Это и есть рабочая процедура: результат, который нравится, проверяется
+      строже результата, который не нравится.
+    </p>
+  </section>
+
+  <section>
+    <p class="sec-label">Данные и инструмент</p>
+    <h2>Как получены наблюдения</h2>
+
+    <div class="stats">
+      <div class="stat"><span class="v">19.5 ч</span><span class="k">текущий прогон, продолжается</span></div>
+      <div class="stat"><span class="v">1 222</span><span class="k">заявки · 522 контрагента</span></div>
+      <div class="stat"><span class="v">13 731</span><span class="k">изменение состояния</span></div>
+      <div class="stat"><span class="v">20 с</span><span class="k">интервал опроса книги</span></div>
+    </div>
+
+    <p style="margin-top:26px">
+      Собственный сборщик книги заявок: опрос публичного эндпоинта каждые 20 секунд,
+      обе стороны рынка, оба контура. Хранение событийное — пишется только фактическое
+      изменение состояния заявки, а её присутствие в книге хранится интервалами.
+      Наивная запись снимков дала бы ~1.7 млн строк в сутки, 99% из которых дубли.
+    </p>
+
+    <div class="callout">
+      <span class="tag">Целостность выборки</span>
+      <p>
+        Журнал обходов — часть данных, а не служебная таблица: без него нельзя отличить
+        «заявка ушла с рынка» от «сборщик не работал». Интервал присутствия закрывается
+        только после полного успешного обхода. В текущем прогоне 398 обходов из 10 665
+        (3.7%) завершились неполной загрузкой книги — ни одно ложное «исчезновение»
+        в выборку не попало. Порог валидности по протоколу — 40%.
+      </p>
+    </div>
+
+    <p>
+      Поиск лучшей пары реализован ленивым слиянием отсортированных потоков вместо
+      полного перебора: 2.2 мс на момент наблюдения против неприемлемых 28 000
+      комбинаций, 72 часа истории обсчитываются за 9 секунд. Эквивалентность полному
+      перебору закреплена тестом на 40 случайных книгах. Зависимостей нет — только
+      стандартная библиотека, чтобы исследование можно было воспроизвести через год.
+    </p>
+    <p>
+      Модуль исполнения сделок в кодовой базе <strong>физически отсутствует</strong>: система
+      неспособна отправить заявку, потому что соответствующего кода не существует.
+      Ни одна финансовая операция в ходе работы не совершалась.
+    </p>
+  </section>
+
+  <section>
+    <p class="sec-label">Границы</p>
+    <h2>Что осталось за пределами измерения</h2>
+    <p>
+      Две величины, определяющие знак итогового результата, не наблюдаемы ни в каком
+      виде: вероятность успешного прохождения перевода и вероятность блокировки счёта
+      по линии комплаенса. Публикуемая доля успешных сделок контрагента описывает его
+      статистику со всеми остальными участниками и <strong>не является оценкой вероятности
+      успеха конкретной сделки</strong>; использовать её в этой роли — подмена условной
+      вероятности безусловной.
+    </p>
+    <p>
+      Именно поэтому результат сформулирован как вменённый порог <code>p*</code>, а не
+      как ожидаемая доходность. Утверждение «нужна вероятность успеха не ниже 96.7%»
+      фальсифицируемо реальными сделками. Утверждение «доходность составит X» — нет.
+    </p>
+    <h3 class="sub">Защита от самообмана</h3>
+    <p>
+      Два механизма встроены в систему после контр-аудита. <strong>Лимит на
+      контрагента</strong> — не более трёх сделок и миллиона тенге на человека за
+      окно: без него 69% бумажной прибыли давали два человека, у которых модель
+      девять раз подряд забирала по невыгодной им цене, а они не реагировали.
+      После лимита доля одного упала с 37% до 17%, а итог честно осел
+      со 123 343 до 84 560 ₸.
+    </p>
+    <p>
+      <strong>Потолок правдоподобия</strong> — один процент в сутки. Текущий
+      результат, 4.8% в сутки, превышает его и помечается предупреждением прямо
+      в интерфейсе. Это не исправление расчёта, а признание: когда симуляция даёт
+      такое на розничном валютном рынке, вероятнее ошибка модели, чем найденная
+      неэффективность. Флаг стоит именно для того, чтобы это не забылось.
+    </p>
+
+    <h3 class="sub">Известные ограничения текущей спецификации</h3>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Ограничение</th><th>Почему это важно</th><th>Что делается</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Наблюдения не независимы</td>
+            <td>Одна заявка и один контрагент порождают сотни состояний;
+                наивные доверительные интервалы будут искусственно узкими.</td>
+            <td>Кластеризация стандартных ошибок по контрагенту, отдельная проверка
+                по заявке.</td>
+          </tr>
+          <tr>
+            <td>Только медиана, без интервала</td>
+            <td>Точечная оценка не показывает, отличимы ли страты статистически.</td>
+            <td>Медиана + IQR + bootstrap-интервал 95% на каждую страту.</td>
+          </tr>
+          <tr>
+            <td>Один номинал круга</td>
+            <td>Премия может зависеть от размера капитала и глубины книги.</td>
+            <td>300 000 ₸ остаётся основной спецификацией; 100k / 500k / 1M —
+                проверка устойчивости, выбранная заранее.</td>
+          </tr>
+          <tr>
+            <td>Нет временных контролей</td>
+            <td>Уровень спреда между августовским и сентябрьским окном заметно
+                различается при сохранении формы.</td>
+            <td>Разбиение по часу суток, дню недели и дате; проверяется устойчивость
+                <em>наклона</em>, а не уровня.</td>
+          </tr>
+          <tr>
+            <td>Нет контроля наблюдаемых факторов</td>
+            <td>Монотонность может создаваться лимитами, рельсами, возрастом заявки
+                или потоком, а не риском.</td>
+            <td>Регрессия спреда на качество с контролем ликвидности, лимитов,
+                возраста заявки, рельсов и времени.</td>
+          </tr>
+          <tr>
+            <td><code>p*</code> зависит от определения потерь</td>
+            <td>Порог безубыточности меняется вместе с предположением о том,
+                сколько теряется при незавершённом расчёте.</td>
+            <td>Таблица чувствительности <code>p*</code> к величине потерь вместо
+                одного числа.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p style="margin-top:22px">
+      Отдельно: исходный массив данных был утрачен 03.09.2026 при отсутствии резервного
+      копирования. Код исследования полностью восстановлен из журнала разработки,
+      измерение повторено на живом рынке, форма зависимости воспроизвелась. Выводы
+      опираются на сохранённые агрегаты августовского прогона и на повторный замер;
+      сырые наблюдения того прогона недоступны для перепроверки третьей стороной.
+      В текущем сборе введено ежедневное неизменяемое резервирование базы вне каталога
+      проекта с контрольными суммами, а каждая запись журнала обходов помечена версией
+      методики — чтобы наблюдения, собранные разными способами, нельзя было молча
+      смешать в одной выборке.
+    </p>
+  </section>
+
+  <footer>
+    <p>
+      Исследование выполнено в августе–сентябре 2026 года. Исходный код и методика:
+      <a href="https://github.com/ha89ter-netizen/p2p-bybit-project">github.com/ha89ter-netizen/p2p-bybit-project</a>.
+      Все числа получены на живых рыночных данных.
+    </p>
+  </footer>
+
+</div>
